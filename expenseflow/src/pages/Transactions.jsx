@@ -20,15 +20,12 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
-import "./transactions.css";
+import "./Transactions.css";
 
 
 function Transactions() {
   const navigate = useNavigate();
 
-  // ========================================
-  // ADD TRANSACTION MODAL
-  // ========================================
 
   const [showModal, setShowModal] = useState(false);
 
@@ -41,10 +38,6 @@ function Transactions() {
   });
 
 
-  // ========================================
-  // FILTERS
-  // ========================================
-
   const [showFilters, setShowFilters] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -56,9 +49,6 @@ function Transactions() {
   });
 
 
-  // ========================================
-  // TRANSACTIONS
-  // ========================================
 
   const [transactions, setTransactions] = useState([]);
 
@@ -69,18 +59,10 @@ function Transactions() {
   const [deletingId, setDeletingId] = useState(null);
 
 
-  // ========================================
-  // GET AUTH TOKEN
-  // ========================================
-
   const getToken = () => {
     return localStorage.getItem("token");
   };
 
-
-  // ========================================
-  // FETCH TRANSACTIONS
-  // ========================================
 
   const fetchTransactions = async () => {
     try {
@@ -149,18 +131,10 @@ function Transactions() {
   };
 
 
-  // ========================================
-  // LOAD TRANSACTIONS
-  // ========================================
-
   useEffect(() => {
     fetchTransactions();
   }, []);
 
-
-  // ========================================
-  // FORM CHANGE
-  // ========================================
 
   const handleChange = (e) => {
     setForm((prev) => ({
@@ -168,11 +142,6 @@ function Transactions() {
       [e.target.name]: e.target.value,
     }));
   };
-
-
-  // ========================================
-  // ADD TRANSACTION
-  // ========================================
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
@@ -284,11 +253,6 @@ function Transactions() {
       setSaving(false);
     }
   };
-
-
-  // ========================================
-  // DELETE TRANSACTION
-  // ========================================
 
   const handleDeleteTransaction = async (
     transactionId
@@ -437,10 +401,6 @@ function Transactions() {
     );
   };
 
-
-  // ========================================
-  // FILTER TRANSACTIONS
-  // ========================================
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(

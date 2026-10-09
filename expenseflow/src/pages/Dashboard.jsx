@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
-import "./Dashboard.css";
+import "./dashboard.css";
 
 function Dashboard() {
   const [showNotifications, setShowNotifications] = useState(false);
