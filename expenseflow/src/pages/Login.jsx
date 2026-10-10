@@ -1,7 +1,12 @@
+
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Wallet } from "lucide-react";
 import { useState } from "react";
 import "./Model.css";
+
+const API_URL = import.meta.env.VITE_API_URL
+  ?.trim()
+  .replace(/\/+$/, "");
 
 function Login() {
   const navigate = useNavigate();
@@ -16,44 +21,70 @@ function Login() {
     e.preventDefault();
 
     setError("");
+
+    if (!API_URL) {
+      setError(
+        "Backend URL is missing. Set VITE_API_URL in Vercel and redeploy."
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/auth/login",
+        `${API_URL}/api/auth/login`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            email,
+            email: email.trim(),
             password,
           }),
         }
       );
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.message || "Login failed.");
-        setLoading(false);
+        if (response.status === 403) {
+          setError(
+            data.message ||
+              "Request blocked. Check backend CORS settings."
+          );
+        } else if (response.status === 503) {
+          setError(
+            data.message ||
+              "Database unavailable. Check MongoDB Atlas and backend logs."
+          );
+        } else {
+          setError(
+            data.message ||
+              `Login failed with status ${response.status}.`
+          );
+        }
+
         return;
       }
 
-      // Save JWT token
-      localStorage.setItem("token", data.token);
+      if (!data.token || !data.user) {
+        setError(
+          "Login response is missing the user or token. Check your backend response."
+        );
+        return;
+      }
 
-      // Save user information
+      localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      // Go to dashboard
       navigate("/dashboard");
-    } catch (error) {
-      console.error("Login Error:", error);
+    } catch (err) {
+      console.error("Login Error:", err);
 
       setError(
-        "Unable to connect to server. Please make sure the backend is running."
+        "Could not reach the backend. Check VITE_API_URL, CORS, and the browser Network tab."
       );
     } finally {
       setLoading(false);
@@ -62,11 +93,9 @@ function Login() {
 
   return (
     <div className="auth-page">
-
       <div className="auth-glow"></div>
 
       <div className="auth-card">
-
         <Link to="/" className="auth-logo">
           <Wallet size={26} />
 
@@ -76,10 +105,7 @@ function Login() {
         </Link>
 
         <div className="auth-heading">
-
-          <span className="auth-label">
-            WELCOME BACK
-          </span>
+          <span className="auth-label">WELCOME BACK</span>
 
           <h1>
             Login to your
@@ -88,33 +114,36 @@ function Login() {
           </h1>
 
           <p>
-            Continue your journey toward smarter financial decisions.
+            Continue your journey toward smarter financial
+            decisions.
           </p>
-
         </div>
 
         <form onSubmit={handleLogin}>
-
           <div className="form-group">
-            <label>Email</label>
+            <label htmlFor="login-email">Email</label>
 
             <input
+              id="login-email"
               type="email"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
 
           <div className="form-group">
-            <label>Password</label>
+            <label htmlFor="login-password">Password</label>
 
             <input
+              id="login-password"
               type="password"
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
           </div>
@@ -127,9 +156,8 @@ function Login() {
             </button>
           </div>
 
-          {/* Error Message */}
           {error && (
-            <div className="auth-error">
+            <div className="auth-error" role="alert">
               {error}
             </div>
           )}
@@ -143,16 +171,13 @@ function Login() {
 
             {!loading && <ArrowRight size={18} />}
           </button>
-
         </form>
 
         <p className="auth-switch">
           Don't have an account?
           <Link to="/signup"> Create account</Link>
         </p>
-
       </div>
-
     </div>
   );
 }
