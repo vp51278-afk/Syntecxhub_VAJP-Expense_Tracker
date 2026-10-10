@@ -26,9 +26,6 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "./Analytics.css";
 
-/* =========================================================
-   CATEGORY ICONS
-========================================================= */
 
 const categoryIcons = {
   Food: Utensils,
@@ -42,9 +39,6 @@ const categoryIcons = {
   Others: MoreHorizontal,
 };
 
-/* =========================================================
-   CATEGORY CSS CLASSES
-========================================================= */
 
 const categoryClasses = {
   Food: "food",
@@ -57,10 +51,6 @@ const categoryClasses = {
   "Personal Care": "personal-care",
   Others: "others",
 };
-
-/* =========================================================
-   MONTH HELPERS
-========================================================= */
 
 const monthNames = [
   "January",
@@ -120,22 +110,15 @@ function getLastSixMonths(value) {
   return months;
 }
 
-/* =========================================================
-   FORMAT MONEY
-========================================================= */
 
 function formatMoney(amount) {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
 }
 
-/* =========================================================
-   ANALYTICS COMPONENT
-========================================================= */
+
 
 function Analytics() {
-  /* -------------------------------------------------------
-     STATE
-  ------------------------------------------------------- */
+
 
   const [selectedMonth, setSelectedMonth] =
     useState(getCurrentMonthValue());
@@ -170,9 +153,6 @@ function Analytics() {
   const [error, setError] =
     useState("");
 
-  /* =======================================================
-     FETCH ANALYTICS
-  ======================================================= */
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -225,9 +205,6 @@ function Analytics() {
 
         setAnalyticsData(currentResult);
 
-        /* ---------------------------------------------------
-           PREVIOUS MONTH
-        --------------------------------------------------- */
 
         const previousMonth =
           getPreviousMonth(selectedMonth);
@@ -256,9 +233,6 @@ function Analytics() {
           setPreviousData(null);
         }
 
-        /* ---------------------------------------------------
-           SIX MONTH TREND
-        --------------------------------------------------- */
 
         const sixMonths =
           getLastSixMonths(selectedMonth);
@@ -332,9 +306,6 @@ function Analytics() {
     fetchAnalytics();
   }, [selectedMonth, selectedCategory]);
 
-  /* =======================================================
-     LOADING
-  ======================================================= */
 
   if (loading) {
     return (
@@ -356,10 +327,6 @@ function Analytics() {
       </div>
     );
   }
-
-  /* =======================================================
-     ERROR
-  ======================================================= */
 
   if (error) {
     return (
@@ -387,9 +354,6 @@ function Analytics() {
     );
   }
 
-  /* =======================================================
-     SAFE DATA
-  ======================================================= */
 
   const summary =
     analyticsData?.summary || {
@@ -423,10 +387,6 @@ function Analytics() {
       percentage: 0,
     };
 
-  /* =======================================================
-     PREVIOUS MONTH CHANGES
-  ======================================================= */
-
   const previousIncome =
     previousData?.summary?.totalIncome || 0;
 
@@ -454,17 +414,9 @@ function Analytics() {
         100
     );
   }
-
-  /* =======================================================
-     SAVINGS
-  ======================================================= */
-
   const savingsRate =
     Number(summary.savingsPercentage || 0);
 
-  /* =======================================================
-     CHART DATA
-  ======================================================= */
 
   let displayedTrend =
     trendData;
@@ -486,9 +438,6 @@ function Analytics() {
     1000
   );
 
-  /* =======================================================
-     MERCHANTS
-  ======================================================= */
 
   const recentTransactions =
     analyticsData?.recentTransactions || [];
@@ -537,9 +486,6 @@ function Analytics() {
     1
   );
 
-  /* =======================================================
-     CATEGORY TOTAL
-  ======================================================= */
 
   const categoryTotal =
     categories.reduce(
@@ -548,9 +494,6 @@ function Analytics() {
       0
     );
 
-  /* =======================================================
-     DONUT GRADIENT
-  ======================================================= */
 
   const donutColors = [
     "#ff3151",
@@ -590,17 +533,9 @@ function Analytics() {
           ", "
         )})`
       : "#252933";
-
-  /* =======================================================
-     RENDER
-  ======================================================= */
-
   return (
     <div className="analytics-dashboard">
 
-      {/* =================================================
-          SIDEBAR
-      ================================================= */}
 
       <aside className="analytics-sidebar">
 
@@ -696,11 +631,6 @@ function Analytics() {
         </div>
 
       </aside>
-
-      {/* =================================================
-          MAIN
-      ================================================= */}
-
       <main className="analytics-main">
 
         {/* HEADER */}
@@ -771,9 +701,6 @@ function Analytics() {
 
         </header>
 
-        {/* =================================================
-            SUMMARY
-        ================================================= */}
 
         <section className="analytics-summary-grid">
 
@@ -935,10 +862,6 @@ function Analytics() {
           </div>
 
         </section>
-
-        {/* =================================================
-            FIRST ROW
-        ================================================= */}
 
         <section className="analytics-chart-grid">
 
@@ -1192,9 +1115,6 @@ function Analytics() {
 
         </section>
 
-        {/* =================================================
-            SECOND ROW
-        ================================================= */}
 
         <section className="analytics-second-grid">
 
@@ -1499,13 +1419,8 @@ function Analytics() {
 
         </section>
 
-        {/* =================================================
-            THIRD ROW
-        ================================================= */}
-
         <section className="analytics-bottom-grid">
 
-          {/* MERCHANTS */}
 
           <div className="analytics-panel merchants-panel">
 

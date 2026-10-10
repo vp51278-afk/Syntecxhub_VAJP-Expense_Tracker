@@ -17,9 +17,6 @@ import "./Goals.css";
 function Goals() {
   const navigate = useNavigate();
 
-  // ========================================
-  // STATE
-  // ========================================
 
   const [goals, setGoals] = useState([]);
 
@@ -47,17 +44,11 @@ function Goals() {
   const [updateAmount, setUpdateAmount] =
     useState("");
 
-  // ========================================
-  // GET TOKEN
-  // ========================================
 
   const getToken = () => {
     return localStorage.getItem("token");
   };
 
-  // ========================================
-  // HANDLE UNAUTHORIZED
-  // ========================================
 
   const handleUnauthorized = () => {
     localStorage.removeItem("token");
@@ -68,9 +59,6 @@ function Goals() {
     });
   };
 
-  // ========================================
-  // FETCH GOALS
-  // ========================================
 
   const fetchGoals = async () => {
     try {
@@ -127,17 +115,10 @@ function Goals() {
     }
   };
 
-  // ========================================
-  // LOAD GOALS
-  // ========================================
 
   useEffect(() => {
     fetchGoals();
   }, []);
-
-  // ========================================
-  // CALCULATIONS
-  // ========================================
 
   const totalSaved = useMemo(() => {
     return goals.reduce(
@@ -166,9 +147,6 @@ function Goals() {
         )
       : 0;
 
-  // ========================================
-  // RESET ADD FORM
-  // ========================================
 
   const resetAddForm = () => {
     setNewGoal({
@@ -179,9 +157,6 @@ function Goals() {
     });
   };
 
-  // ========================================
-  // ADD GOAL
-  // ========================================
 
   const handleAddGoal = async (e) => {
     e.preventDefault();
@@ -283,9 +258,6 @@ function Goals() {
     }
   };
 
-  // ========================================
-  // OPEN UPDATE MODAL
-  // ========================================
 
   const openUpdateModal = (goal) => {
     setSelectedGoal(goal);
@@ -293,9 +265,6 @@ function Goals() {
     setShowUpdateModal(true);
   };
 
-  // ========================================
-  // UPDATE PROGRESS
-  // ========================================
 
   const handleUpdateProgress = async (e) => {
     e.preventDefault();
@@ -399,9 +368,6 @@ function Goals() {
     }
   };
 
-  // ========================================
-  // DELETE GOAL
-  // ========================================
 
   const deleteGoal = async (goalId) => {
     const confirmed = window.confirm(
@@ -468,9 +434,6 @@ function Goals() {
     }
   };
 
-  // ========================================
-  // FORMAT DATE
-  // ========================================
 
   const formatDeadline = (date) => {
     if (!date) {
@@ -495,9 +458,6 @@ function Goals() {
     );
   };
 
-  // ========================================
-  // ICON
-  // ========================================
 
   const getGoalIcon = (icon) => {
     if (icon === "wallet") {
@@ -511,9 +471,6 @@ function Goals() {
     return Target;
   };
 
-  // ========================================
-  // LOADING
-  // ========================================
 
   if (loading) {
     return (
@@ -525,16 +482,10 @@ function Goals() {
     );
   }
 
-  // ========================================
-  // RENDER
-  // ========================================
 
   return (
     <div className="goals-page">
 
-      {/* ========================================
-          HEADER
-      ======================================== */}
 
       <div className="goals-header">
 
@@ -581,9 +532,6 @@ function Goals() {
 
       </div>
 
-      {/* ========================================
-          ERROR
-      ======================================== */}
 
       {error && (
         <div className="goals-error">
@@ -591,9 +539,6 @@ function Goals() {
         </div>
       )}
 
-      {/* ========================================
-          SUMMARY
-      ======================================== */}
 
       <section className="goals-summary">
 
@@ -678,10 +623,6 @@ function Goals() {
         </div>
 
       </section>
-
-      {/* ========================================
-          GOALS
-      ======================================== */}
 
       <section className="goals-section">
 
@@ -871,10 +812,6 @@ function Goals() {
             );
           })}
 
-          {/* ========================================
-              CREATE NEW GOAL
-          ======================================== */}
-
           <button
             className="new-goal-card"
             onClick={() =>
@@ -900,10 +837,6 @@ function Goals() {
         </div>
 
       </section>
-
-      {/* ========================================
-          EMPTY STATE
-      ======================================== */}
 
       {goals.length === 0 && (
         <div className="goals-empty">
@@ -932,9 +865,6 @@ function Goals() {
         </div>
       )}
 
-      {/* ========================================
-          SMART TIP
-      ======================================== */}
 
       <section className="goal-tip">
 
@@ -962,9 +892,6 @@ function Goals() {
 
       </section>
 
-      {/* =================================================
-          ADD GOAL MODAL
-      ================================================= */}
 
       {showAddModal && (
 
@@ -1113,9 +1040,6 @@ function Goals() {
         </div>
       )}
 
-      {/* =================================================
-          UPDATE PROGRESS MODAL
-      ================================================= */}
 
       {showUpdateModal &&
         selectedGoal && (

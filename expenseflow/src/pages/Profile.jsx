@@ -25,9 +25,6 @@ import "./Profile.css";
 function Profile() {
   const navigate = useNavigate();
 
-  // =====================================================
-  // PROFILE STATE
-  // =====================================================
 
   const [saved, setSaved] = useState(false);
 
@@ -42,9 +39,6 @@ function Profile() {
     riskPreference: "Moderate",
   });
 
-  // =====================================================
-  // SECURITY STATE
-  // =====================================================
 
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(() => {
     const saved2FA = localStorage.getItem("expenseflow_two_factor");
@@ -66,9 +60,6 @@ function Profile() {
 
   const [passwordMessage, setPasswordMessage] = useState("");
 
-  // =====================================================
-  // PROFILE CHANGE
-  // =====================================================
 
   const handleChange = (field, value) => {
     setProfile((prev) => ({
@@ -79,9 +70,6 @@ function Profile() {
     setSaved(false);
   };
 
-  // =====================================================
-  // SAVE PROFILE
-  // =====================================================
   const handleSave = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -136,10 +124,6 @@ function Profile() {
       );
     }
   };
-
-  // =====================================================
-  // CHANGE PASSWORD
-  // =====================================================
 
   const handlePasswordChange = () => {
     setPasswordMessage("");
@@ -201,9 +185,6 @@ function Profile() {
     });
   };
 
-  // =====================================================
-  // TWO FACTOR AUTHENTICATION
-  // =====================================================
 
   const handleTwoFactorToggle = (event) => {
     const enabled = event.target.checked;
@@ -216,9 +197,6 @@ function Profile() {
     );
   };
 
-  // =====================================================
-  // LOGOUT
-  // =====================================================
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -229,16 +207,9 @@ function Profile() {
     });
   };
 
-  // =====================================================
-  // RENDER
-  // =====================================================
-
   return (
     <div className="profile-page">
 
-      {/* =================================================
-          TOP BAR
-      ================================================= */}
 
       <div className="profile-topbar">
 
@@ -273,9 +244,6 @@ function Profile() {
 
       </div>
 
-      {/* =================================================
-          PROFILE MAIN CARD
-      ================================================= */}
 
       <section className="profile-main-card">
 
@@ -317,15 +285,10 @@ function Profile() {
 
       </section>
 
-      {/* =================================================
-          CONTENT GRID
-      ================================================= */}
+      
 
       <div className="profile-content-grid">
 
-        {/* =================================================
-            PERSONAL INFORMATION
-        ================================================= */}
 
         <section className="profile-card">
 
@@ -462,9 +425,6 @@ function Profile() {
 
         </section>
 
-        {/* =================================================
-            FINANCIAL PREFERENCES
-        ================================================= */}
 
         <section className="profile-card">
 
@@ -638,9 +598,6 @@ function Profile() {
 
         </section>
 
-        {/* =================================================
-            SECURITY
-        ================================================= */}
 
         <section className="profile-card">
 
@@ -666,9 +623,6 @@ function Profile() {
 
           <div className="security-list">
 
-            {/* ============================================
-                CHANGE PASSWORD
-            ============================================ */}
 
             <div className="security-item">
 
@@ -819,9 +773,6 @@ function Profile() {
 
             )}
 
-            {/* ============================================
-                TWO FACTOR AUTHENTICATION
-            ============================================ */}
 
             <div className="security-item">
 
@@ -861,9 +812,6 @@ function Profile() {
 
             </div>
 
-            {/* ============================================
-                SESSION MANAGEMENT
-            ============================================ */}
 
             <div className="security-item">
 
@@ -969,10 +917,6 @@ function Profile() {
 
         </section>
 
-        {/* =================================================
-            APP PREFERENCES
-        ================================================= */}
-
         <section className="profile-card">
 
           <div className="profile-card-heading">
@@ -1031,9 +975,6 @@ function Profile() {
 
       </div>
 
-      {/* =================================================
-          ACCOUNT / LOGOUT
-      ================================================= */}
 
       <section className="profile-danger">
 
@@ -1067,10 +1008,6 @@ function Profile() {
     </div>
   );
 }
-
-// =========================================================
-// PREFERENCE COMPONENT
-// =========================================================
 
 function Preference({
   icon,

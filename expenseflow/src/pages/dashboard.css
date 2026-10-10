@@ -3902,10 +3902,6 @@
     padding: 15px !important;
   }
 }
-/* =========================================================
-   FINAL EXPENSEFLOW DASHBOARD FIX
-   Prevent landing-page .laptop CSS from affecting goal icon
-========================================================= */
 
 .new-dashboard {
   position: relative !important;

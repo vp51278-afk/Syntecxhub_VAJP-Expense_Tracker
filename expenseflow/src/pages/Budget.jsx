@@ -38,9 +38,6 @@ import { Link, useNavigate } from "react-router-dom";
 
 import "./Budget.css";
 
-/* =========================================================
-   CATEGORY OPTIONS
-========================================================= */
 
 const categoryOptions = [
   {
@@ -93,9 +90,6 @@ const categoryOptions = [
   },
 ];
 
-/* =========================================================
-   ICON MAP
-========================================================= */
 
 const iconMap = {
   food: Utensils,
@@ -108,9 +102,6 @@ const iconMap = {
   others: MoreHorizontal,
 };
 
-/* =========================================================
-   MONTH OPTIONS
-========================================================= */
 
 const monthOptions = [
   "September 2026",
@@ -119,9 +110,6 @@ const monthOptions = [
   "December 2026",
 ];
 
-/* =========================================================
-   HELPERS
-========================================================= */
 
 const getMonthKey = (month) => {
   const date = new Date(`${month} 01`);
@@ -145,16 +133,10 @@ const getCategoryByBackendName = (backendName) => {
   );
 };
 
-/* =========================================================
-   BUDGET PAGE
-========================================================= */
 
 function Budget() {
   const navigate = useNavigate();
 
-  /* =======================================================
-     STATE
-  ======================================================= */
 
   const [budgets, setBudgets] = useState([]);
 
@@ -202,17 +184,12 @@ function Budget() {
     budget: "",
   });
 
-  /* =======================================================
-     TOKEN
-  ======================================================= */
+ 
 
   const getToken = () => {
     return localStorage.getItem("token");
   };
 
-  /* =======================================================
-     AUTH ERROR HANDLER
-  ======================================================= */
 
   const handleUnauthorized = () => {
     localStorage.removeItem("token");
@@ -223,16 +200,10 @@ function Budget() {
     });
   };
 
-  /* =======================================================
-     MONTH KEY
-  ======================================================= */
 
   const currentMonthKey =
     getMonthKey(selectedMonth);
 
-  /* =======================================================
-     FETCH BUDGETS
-  ======================================================= */
 
   const fetchBudgets = async () => {
     try {
@@ -283,9 +254,6 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     FETCH TRANSACTIONS
-  ======================================================= */
 
   const fetchTransactions = async () => {
     try {
@@ -336,10 +304,6 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     INITIAL LOAD / MONTH CHANGE
-  ======================================================= */
-
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -355,10 +319,6 @@ function Budget() {
     loadData();
   }, [selectedMonth]);
 
-  /* =======================================================
-     SAVE ALERT SETTING
-  ======================================================= */
-
   useEffect(() => {
     localStorage.setItem(
       "expenseflow-budget-alerts",
@@ -366,9 +326,6 @@ function Budget() {
     );
   }, [budgetAlerts]);
 
-  /* =======================================================
-     CALCULATE MONTHLY INCOME
-  ======================================================= */
 
   const monthlyIncome = useMemo(() => {
     const user =
@@ -382,9 +339,6 @@ function Budget() {
     );
   }, []);
 
-  /* =======================================================
-     CALCULATE SPENT BY CATEGORY
-  ======================================================= */
 
   const getSpentForCategory = (
     backendCategory
@@ -441,9 +395,6 @@ function Budget() {
       );
   };
 
-  /* =======================================================
-     PREPARE DISPLAY BUDGETS
-  ======================================================= */
 
   const displayBudgets = useMemo(() => {
     return budgets.map((budget) => {
@@ -487,9 +438,6 @@ function Budget() {
     currentMonthKey,
   ]);
 
-  /* =======================================================
-     SUMMARY CALCULATIONS
-  ======================================================= */
 
   const totalBudgeted = useMemo(() => {
     return displayBudgets.reduce(
@@ -548,9 +496,6 @@ function Budget() {
       }
     );
 
-  /* =======================================================
-     CREATE MODAL
-  ======================================================= */
 
   const openCreateModal = () => {
     setEditingBudget(null);
@@ -564,9 +509,6 @@ function Budget() {
     setModalOpen(true);
   };
 
-  /* =======================================================
-     EDIT MODAL
-  ======================================================= */
 
   const openEditModal = (item) => {
     setEditingBudget(item);
@@ -589,10 +531,6 @@ function Budget() {
     setModalOpen(true);
   };
 
-  /* =======================================================
-     CLOSE MODAL
-  ======================================================= */
-
   const closeModal = () => {
     if (saving) {
       return;
@@ -602,9 +540,6 @@ function Budget() {
     setEditingBudget(null);
   };
 
-  /* =======================================================
-     FORM CHANGE
-  ======================================================= */
 
   const handleFormChange = (event) => {
     const {
@@ -618,9 +553,6 @@ function Budget() {
     }));
   };
 
-  /* =======================================================
-     SAVE / CREATE BUDGET
-  ======================================================= */
 
   const handleSaveBudget = async (
     event
@@ -726,11 +658,6 @@ function Budget() {
 
         return;
       }
-
-      /*
-       * Backend uses upsert.
-       * Replace existing budget if present.
-       */
       setBudgets((previous) => {
         const exists =
           previous.some(
@@ -770,9 +697,6 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     DELETE BUDGET
-  ======================================================= */
 
   const deleteBudget = async (id) => {
     const selectedBudget =
@@ -853,9 +777,6 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     AUTO ALLOCATE
-  ======================================================= */
 
   const autoAllocateBudget = async () => {
     const available =
@@ -1009,9 +930,6 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     RESET
-  ======================================================= */
 
   const resetBudgets = async () => {
     const confirmed =
@@ -1058,16 +976,11 @@ function Budget() {
     }
   };
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+
 
   return (
     <div className="budget-page">
 
-      {/* ===================================================
-          SIDEBAR
-      =================================================== */}
 
       <aside className="budget-sidebar">
 
@@ -1179,10 +1092,6 @@ function Budget() {
         </div>
 
       </aside>
-
-      {/* ===================================================
-          MAIN
-      =================================================== */}
 
       <main className="budget-main">
 
@@ -2057,9 +1966,6 @@ function Budget() {
 
       </main>
 
-      {/* =====================================================
-          CREATE / EDIT MODAL
-      ===================================================== */}
 
       {modalOpen && (
         <div
@@ -2234,10 +2140,6 @@ function Budget() {
   );
 }
 
-/* =========================================================
-   LEGEND COMPONENT
-========================================================= */
-
 function Legend({
   color,
   name,
@@ -2297,10 +2199,6 @@ function TrendBar({
   );
 }
 
-/* =========================================================
-   QUICK ACTION COMPONENT
-========================================================= */
-
 function QuickAction({
   icon,
   text,
@@ -2327,8 +2225,5 @@ function QuickAction({
   );
 }
 
-/* =========================================================
-   EXPORT
-========================================================= */
 
 export default Budget;

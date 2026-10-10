@@ -110,7 +110,6 @@ function Dashboard() {
   return (
     <div className="new-dashboard">
 
-      {/* ================= SIDEBAR ================= */}
 
       <aside className="new-dashboard-sidebar">
 
@@ -206,8 +205,6 @@ function Dashboard() {
 
       </aside>
 
-
-      {/* ================= MAIN ================= */}
 
       <main className="new-dashboard-main">
 
@@ -334,7 +331,6 @@ function Dashboard() {
         </header>
 
 
-        {/* ================= STAT CARDS ================= */}
 
         <section className="new-stat-grid">
 
@@ -374,8 +370,6 @@ function Dashboard() {
 
         </section>
 
-
-        {/* ================= CHART ROW ================= */}
 
         <section className="dashboard-chart-grid">
 
@@ -1054,8 +1048,6 @@ function Dashboard() {
 
       </main>
 
-
-      {/* CLICK OUTSIDE STYLE CLOSE BUTTON */}
 
       {showNotifications && (
         <button

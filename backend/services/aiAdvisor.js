@@ -2,7 +2,7 @@
 const { GoogleGenAI } = require("@google/genai");
 
 if (!process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is missing from backend .env");
+  throw new Error("GEMINI_API_KEY is missing from backend environment variables.");
 }
 
 const client = new GoogleGenAI({
@@ -11,6 +11,16 @@ const client = new GoogleGenAI({
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createQuotaError = () => {
+  const error = new Error(
+    "Vajp's AI usage limit has been reached. Please try again in about 13 hours."
+  );
+  error.status = 429;
+  error.code = "AI_QUOTA_EXCEEDED";
+  error.retryAfterSeconds = 13 * 60 * 60;
+  return error;
+};
 
 const createAIResponse = async (instructions, input, textFormat) => {
   const config = {
@@ -32,14 +42,27 @@ const createAIResponse = async (instructions, input, textFormat) => {
       });
 
       const output = response.text;
-      if (!output) throw new Error("Vajp returned an empty response.");
+
+      if (!output) {
+        throw new Error("Vajp returned an empty response.");
+      }
+
       return output.trim();
     } catch (error) {
       const message = String(error.message || "");
       const status = Number(error.status || error.code);
+
+      const quotaExceeded =
+        status === 429 ||
+        /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(message);
+
+      if (quotaExceeded) {
+        throw createQuotaError();
+      }
+
       const retryable =
-        [429, 500, 502, 503, 504].includes(status) ||
-        /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporarily unavailable/i.test(message);
+        [500, 502, 503, 504].includes(status) ||
+        /UNAVAILABLE|high demand|temporarily unavailable/i.test(message);
 
       console.error("Gemini API error:", {
         message,
@@ -48,7 +71,10 @@ const createAIResponse = async (instructions, input, textFormat) => {
         attempt: attempt + 1,
       });
 
-      if (!retryable || attempt === 2) throw error;
+      if (!retryable || attempt === 2) {
+        throw error;
+      }
+
       await sleep(1000 * (attempt + 1));
     }
   }
@@ -135,6 +161,7 @@ Rules:
   );
 
   let advice;
+
   try {
     advice = JSON.parse(output);
   } catch {
@@ -214,6 +241,7 @@ Rules:
 
 module.exports = getAIAdvisor;
 module.exports.getGeneralAIResponse = getGeneralAIResponse;
+
 
 
 

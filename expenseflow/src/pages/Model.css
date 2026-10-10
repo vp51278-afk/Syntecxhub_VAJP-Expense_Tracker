@@ -234,10 +234,6 @@
   }
   
   
-  /* ============================= */
-  /* NAVBAR LINKS */
-  /* ============================= */
-  
   .nav-buttons a {
     text-decoration: none;
     display: inline-flex;
@@ -266,10 +262,6 @@
     justify-content: center;
   }
   
-  
-  /* ============================= */
-  /* MOBILE AUTH */
-  /* ============================= */
   
   @media (max-width: 600px) {
   

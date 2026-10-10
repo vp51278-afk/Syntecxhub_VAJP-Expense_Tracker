@@ -1,10 +1,6 @@
 const Transaction = require("../models/Transaction");
 
 
-// ========================================
-// ADD TRANSACTION
-// ========================================
-
 const addTransaction = async (req, res) => {
   try {
     const {
@@ -57,10 +53,6 @@ const addTransaction = async (req, res) => {
 };
 
 
-// ========================================
-// GET TRANSACTIONS
-// ========================================
-
 const getTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find({
@@ -88,10 +80,6 @@ const getTransactions = async (req, res) => {
   }
 };
 
-
-// ========================================
-// DELETE TRANSACTION
-// ========================================
 
 const deleteTransaction = async (req, res) => {
   try {

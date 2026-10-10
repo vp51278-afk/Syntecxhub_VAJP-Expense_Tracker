@@ -1,6 +1,7 @@
 
 const express = require("express");
 const router = express.Router();
+
 const { protect } = require("../middleware/authMiddleware");
 const Transaction = require("../models/Transaction");
 const Goal = require("../models/Goal");
@@ -9,6 +10,30 @@ const getAIAdvisor = require("../services/aiAdvisor");
 const toNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+};
+
+const sendAdvisorError = (res, error) => {
+  console.error("Vajp error:", error.message);
+
+  if (
+    error.status === 429 ||
+    error.code === "AI_QUOTA_EXCEEDED"
+  ) {
+    return res.status(429).json({
+      success: false,
+      code: "AI_QUOTA_EXCEEDED",
+      message:
+        "Vajp has reached its AI usage limit. Please try again in about 13 hours.",
+      retryAfterSeconds: 13 * 60 * 60,
+    });
+  }
+
+  return res.status(503).json({
+    success: false,
+    code: "AI_TEMPORARILY_UNAVAILABLE",
+    message:
+      "Vajp is temporarily unavailable. Your ExpenseFlow data is safe. Please try again later.",
+  });
 };
 
 const getFinancialData = async (userId) => {
@@ -46,15 +71,20 @@ const getFinancialData = async (userId) => {
 
   const monthlyGoalContributions = normalizedGoals.reduce((total, goal) => {
     const remaining = Math.max(0, goal.target - goal.saved);
+
     if (remaining === 0 || !goal.deadline) return total;
 
     const deadline = new Date(goal.deadline);
-    if (Number.isNaN(deadline.getTime()) || deadline <= now) return total;
+
+    if (Number.isNaN(deadline.getTime()) || deadline <= now) {
+      return total;
+    }
 
     const monthsRemaining = Math.max(
       1,
       (deadline.getFullYear() - now.getFullYear()) * 12 +
-        deadline.getMonth() - now.getMonth() +
+        deadline.getMonth() -
+        now.getMonth() +
         (deadline.getDate() > now.getDate() ? 1 : 0)
     );
 
@@ -93,6 +123,7 @@ router.post("/", protect, async (req, res) => {
     }
 
     const purchasePrice = Number(price);
+
     if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
       return res.status(400).json({
         success: false,
@@ -120,10 +151,8 @@ router.post("/", protect, async (req, res) => {
     }
 
     let decision = advice.decision;
-    if (
-      purchasePrice > finances.safeToSpend ||
-      !finances.hasMonthlyIncome
-    ) {
+
+    if (purchasePrice > finances.safeToSpend || !finances.hasMonthlyIncome) {
       decision = decision === "AVOID" ? "AVOID" : "WAIT";
     }
 
@@ -153,11 +182,7 @@ router.post("/", protect, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Vajp purchase advisor error:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to generate purchase advice right now.",
-    });
+    return sendAdvisorError(res, error);
   }
 });
 
@@ -219,13 +244,10 @@ router.post("/chat", protect, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Vajp chat error:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to answer your question right now.",
-    });
+    return sendAdvisorError(res, error);
   }
 });
 
 module.exports = router;
+
 

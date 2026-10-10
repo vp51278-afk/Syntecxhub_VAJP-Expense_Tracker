@@ -1,9 +1,5 @@
 const Goal = require("../models/Goal");
 
-// ========================================
-// CREATE GOAL
-// ========================================
-
 const createGoal = async (req, res) => {
   try {
     const {
@@ -59,9 +55,6 @@ const createGoal = async (req, res) => {
   }
 };
 
-// ========================================
-// GET ALL GOALS
-// ========================================
 
 const getGoals = async (req, res) => {
   try {
@@ -86,9 +79,6 @@ const getGoals = async (req, res) => {
   }
 };
 
-// ========================================
-// UPDATE GOAL
-// ========================================
 
 const updateGoal = async (req, res) => {
   try {
@@ -162,10 +152,6 @@ const updateGoal = async (req, res) => {
     });
   }
 };
-
-// ========================================
-// DELETE GOAL
-// ========================================
 
 const deleteGoal = async (req, res) => {
   try {

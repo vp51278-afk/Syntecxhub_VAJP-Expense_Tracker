@@ -465,10 +465,6 @@ function Transactions() {
   ]);
 
 
-  // ========================================
-  // SUMMARY
-  // ========================================
-
   const totalIncome = transactions
     .filter(
       (item) =>
@@ -493,10 +489,6 @@ function Transactions() {
     );
 
 
-  // ========================================
-  // RESET FILTERS
-  // ========================================
-
   const resetFilters = () => {
     setFilters({
       type: "all",
@@ -511,9 +503,6 @@ function Transactions() {
   return (
     <div className="transactions-page">
 
-      {/* =====================================
-          SIDEBAR
-      ===================================== */}
 
       <aside className="dashboard-sidebar">
 
@@ -591,16 +580,9 @@ function Transactions() {
       </aside>
 
 
-      {/* =====================================
-          MAIN
-      ===================================== */}
 
       <main className="transactions-content">
 
-
-        {/* =====================================
-            HEADER
-        ===================================== */}
 
         <div className="transactions-header">
 
@@ -637,10 +619,6 @@ function Transactions() {
 
         </div>
 
-
-        {/* =====================================
-            SUMMARY
-        ===================================== */}
 
         <div className="transaction-summary">
 
@@ -701,11 +679,6 @@ function Transactions() {
           </div>
 
         </div>
-
-
-        {/* =====================================
-            TOOLBAR
-        ===================================== */}
 
         <div className="transaction-toolbar">
 
@@ -888,10 +861,6 @@ function Transactions() {
         </div>
 
 
-        {/* =====================================
-            TRANSACTION LIST
-        ===================================== */}
-
         <div className="transaction-list-panel">
 
 
@@ -993,11 +962,6 @@ function Transactions() {
         </div>
 
       </main>
-
-
-      {/* =====================================
-          ADD TRANSACTION MODAL
-      ===================================== */}
 
       {showModal && (
 
@@ -1267,10 +1231,6 @@ function Transactions() {
   );
 }
 
-
-// ============================================================
-// TRANSACTION ROW
-// ============================================================
 
 function TransactionRow({
   icon,

@@ -3,10 +3,6 @@ const jwt = require("jsonwebtoken");
 
 const User = require("../models/User");
 
-
-// ================================
-// Generate JWT Token
-// ================================
 const generateToken = (userId) => {
   return jwt.sign(
     { id: userId },
@@ -17,10 +13,6 @@ const generateToken = (userId) => {
   );
 };
 
-
-// ================================
-// Register User
-// ================================
 const registerUser = async (req, res) => {
   try {
     const {
@@ -92,10 +84,6 @@ const registerUser = async (req, res) => {
   }
 };
 
-
-// ================================
-// Login User
-// ================================
 const loginUser = async (req, res) => {
   try {
     const {
@@ -160,10 +148,6 @@ const loginUser = async (req, res) => {
   }
 };
 
-
-// ================================
-// Get Current User
-// ================================
 const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(
@@ -192,10 +176,6 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-
-// ================================
-// Update Profile
-// ================================
 const updateProfile = async (req, res) => {
   try {
     const {

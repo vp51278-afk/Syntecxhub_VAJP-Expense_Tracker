@@ -1,9 +1,6 @@
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 
-// ========================================
-// SIMULATE PURCHASE
-// ========================================
 
 const simulatePurchase = async (req, res) => {
   try {
@@ -31,9 +28,6 @@ const simulatePurchase = async (req, res) => {
       });
     }
 
-    // ========================================
-    // GET USER
-    // ========================================
 
     const user = await User.findById(req.user.id);
 
@@ -44,9 +38,6 @@ const simulatePurchase = async (req, res) => {
       });
     }
 
-    // ========================================
-    // CURRENT MONTH
-    // ========================================
 
     const now = new Date();
 
@@ -65,9 +56,6 @@ const simulatePurchase = async (req, res) => {
       59
     );
 
-    // ========================================
-    // GET CURRENT MONTH TRANSACTIONS
-    // ========================================
 
     const transactions = await Transaction.find({
       user: req.user.id,
@@ -88,10 +76,6 @@ const simulatePurchase = async (req, res) => {
       }
     });
 
-    // ========================================
-    // USER MONTHLY INCOME FALLBACK
-    // ========================================
-
     if (totalIncome === 0 && user.monthlyIncome) {
       totalIncome = user.monthlyIncome;
     }
@@ -101,10 +85,6 @@ const simulatePurchase = async (req, res) => {
 
     const remainingAfterPurchase =
       remainingBeforePurchase - purchasePrice;
-
-    // ========================================
-    // AFFORDABILITY
-    // ========================================
 
     let status = "safe";
     let recommendation = "This purchase looks affordable.";
@@ -124,9 +104,6 @@ const simulatePurchase = async (req, res) => {
         "This purchase is quite large compared with your monthly income.";
     }
 
-    // ========================================
-    // IMPACT PERCENTAGE
-    // ========================================
 
     const incomeImpact =
       totalIncome > 0

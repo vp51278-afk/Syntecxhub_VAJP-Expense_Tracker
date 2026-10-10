@@ -1,9 +1,6 @@
 const Transaction = require("../models/Transaction");
 const Budget = require("../models/Budget");
 
-// ========================================
-// ANALYTICS
-// ========================================
 
 const getAnalytics = async (req, res) => {
   try {
@@ -19,9 +16,6 @@ const getAnalytics = async (req, res) => {
         ? Number(month)
         : currentDate.getMonth();
 
-    // ========================================
-    // MONTH RANGE
-    // ========================================
 
     const startOfMonth = new Date(
       selectedYear,
@@ -38,9 +32,7 @@ const getAnalytics = async (req, res) => {
       59
     );
 
-    // ========================================
-    // TRANSACTIONS
-    // ========================================
+  
 
     const transactions = await Transaction.find({
       user: req.user.id,
@@ -72,9 +64,6 @@ const getAnalytics = async (req, res) => {
       }
     });
 
-    // ========================================
-    // CATEGORY DATA
-    // ========================================
 
     const categories = Object.entries(
       categoryTotals
@@ -93,9 +82,6 @@ const getAnalytics = async (req, res) => {
       (a, b) => b.amount - a.amount
     );
 
-    // ========================================
-    // SAVINGS
-    // ========================================
 
     const savings =
       totalIncome - totalExpenses;
@@ -107,9 +93,6 @@ const getAnalytics = async (req, res) => {
           )
         : 0;
 
-    // ========================================
-    // BUDGETS
-    // ========================================
 
     const monthKey = `${selectedYear}-${String(
       selectedMonth + 1
@@ -133,25 +116,15 @@ const getAnalytics = async (req, res) => {
           )
         : 0;
 
-    // ========================================
-    // RECENT TRANSACTIONS
-    // ========================================
 
     const recentTransactions =
       transactions.slice(0, 10);
 
-    // ========================================
-    // TOP SPENDING CATEGORY
-    // ========================================
 
     const topCategory =
       categories.length > 0
         ? categories[0]
         : null;
-
-    // ========================================
-    // RESPONSE
-    // ========================================
 
     res.json({
       success: true,
