@@ -29,7 +29,7 @@ import {
 
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
-
+import API_BASE_URL from "../api";
 import "./Simulator.css";
 
 function Simulator() {
@@ -158,12 +158,10 @@ function Simulator() {
         "vajpExpenseContext",
         JSON.stringify(advisorData)
       );
-
       const response = await fetch(
-        "http://localhost:5000/api/advisor",
+        `${API_BASE_URL}/api/advisor`,
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
           },

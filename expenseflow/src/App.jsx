@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 
 import { useState } from "react";
-
+import API_BASE_URL from "./api";
 import "./index.css";
 
 import Signup from "./pages/Signup";
@@ -1048,12 +1048,14 @@ function Landing() {
     setVajpResponse(null);
 
     try {
-      const response = await fetch("http://localhost:5000/api/advisor/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await fetch(
+        `${API_BASE_URL}/api/advisor/chat`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
         body: JSON.stringify({ question }),
       });
 

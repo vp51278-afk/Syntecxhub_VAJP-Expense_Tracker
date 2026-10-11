@@ -19,7 +19,7 @@ import {
 
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-
+import API_BASE_URL from "../api";
 import "./Transactions.css";
 
 
@@ -79,10 +79,9 @@ function Transactions() {
       setLoading(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/transactions",
+        `${API_BASE_URL}/api/transactions`,
         {
           method: "GET",
-
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -180,10 +179,9 @@ function Transactions() {
       setSaving(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/transactions",
+        `${API_BASE_URL}/api/transactions`,
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -277,16 +275,15 @@ function Transactions() {
       }
 
       setDeletingId(transactionId);
-
       const response = await fetch(
-        `http://localhost:5000/api/transactions/${transactionId}`,
+        `${API_BASE_URL}/api/transactions/${transactionId}`,
         {
           method: "DELETE",
-
           headers: {
             Authorization: `Bearer ${token}`,
           },
         }
+      
       );
 
       const data = await response.json();

@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 
 import { Link, useNavigate } from "react-router-dom";
-
+import API_BASE_URL from "../api";
 import "./Budget.css";
 
 
@@ -215,7 +215,7 @@ function Budget() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/api/budgets?month=${encodeURIComponent(
+        `${API_BASE_URL}/api/budgets?month=${encodeURIComponent(
           currentMonthKey
         )}`,
         {
@@ -265,7 +265,7 @@ function Budget() {
       }
 
       const response = await fetch(
-        "http://localhost:5000/api/transactions",
+        `${API_BASE_URL}/api/transactions`,
         {
           method: "GET",
           headers: {
@@ -619,14 +619,11 @@ function Budget() {
       setSaving(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/budgets",
+        `${API_BASE_URL}/api/budgets`,
         {
           method: "POST",
-
           headers: {
-            "Content-Type":
-              "application/json",
-
+            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
 
@@ -726,16 +723,15 @@ function Budget() {
       }
 
       setDeletingId(id);
-
       const response = await fetch(
-        `http://localhost:5000/api/budgets/${id}`,
+        `${API_BASE_URL}/api/budgets/${id}`,
         {
           method: "DELETE",
-
           headers: {
             Authorization: `Bearer ${token}`,
           },
         }
+      
       );
 
       const data =
@@ -806,18 +802,14 @@ function Budget() {
       }
 
       if (othersBudget) {
-        const response =
-          await fetch(
-            "http://localhost:5000/api/budgets",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-
-                Authorization: `Bearer ${token}`,
-              },
+        const response = await fetch(
+          `${API_BASE_URL}/api/budgets`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
 
               body: JSON.stringify({
                 category: "Others",
@@ -863,18 +855,14 @@ function Budget() {
           )
         );
       } else {
-        const response =
-          await fetch(
-            "http://localhost:5000/api/budgets",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-
-                Authorization: `Bearer ${token}`,
-              },
+        const response = await fetch(
+          `${API_BASE_URL}/api/budgets`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
 
               body: JSON.stringify({
                 category: "Others",
@@ -951,10 +939,9 @@ function Budget() {
 
       for (const budget of budgets) {
         await fetch(
-          `http://localhost:5000/api/budgets/${budget._id}`,
+          `${API_BASE_URL}/api/budgets/${budget._id}`,
           {
             method: "DELETE",
-
             headers: {
               Authorization: `Bearer ${token}`,
             },

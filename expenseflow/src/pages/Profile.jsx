@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 import { Link, useNavigate } from "react-router-dom";
-
+import API_BASE_URL from "../api";
 import "./Profile.css";
 
 function Profile() {
@@ -80,7 +80,7 @@ function Profile() {
       }
   
       const response = await fetch(
-        "http://localhost:5000/api/auth/profile",
+        `${API_BASE_URL}/api/auth/profile`,
         {
           method: "PUT",
           headers: {

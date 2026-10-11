@@ -25,7 +25,7 @@ import {
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "./Analytics.css";
-
+import API_BASE_URL from "../api";
 
 const categoryIcons = {
   Food: Utensils,
@@ -171,9 +171,8 @@ function Analytics() {
         const [year, month] =
           selectedMonth.split("-");
 
-        const currentResponse =
-          await fetch(
-            `http://localhost:5000/api/analytics?month=${
+          const currentResponse = await fetch(
+            `${API_BASE_URL}/api/analytics?month=${
               Number(month) - 1
             }&year=${year}`,
             {
@@ -211,10 +210,8 @@ function Analytics() {
 
         const [previousYear, previousMonthNumber] =
           previousMonth.split("-");
-
-        const previousResponse =
-          await fetch(
-            `http://localhost:5000/api/analytics?month=${
+          const previousResponse = await fetch(
+            `${API_BASE_URL}/api/analytics?month=${
               Number(previousMonthNumber) - 1
             }&year=${previousYear}`,
             {
@@ -244,17 +241,16 @@ function Analytics() {
                 monthValue.split("-");
 
               try {
-                const response =
-                  await fetch(
-                    `http://localhost:5000/api/analytics?month=${
-                      Number(trendMonth) - 1
-                    }&year=${trendYear}`,
-                    {
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                      },
-                    }
-                  );
+                const response = await fetch(
+                  `${API_BASE_URL}/api/analytics?month=${
+                    Number(trendMonth) - 1
+                  }&year=${trendYear}`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                    },
+                  }
+                );
 
                 if (!response.ok) {
                   return {
