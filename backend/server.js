@@ -20,51 +20,76 @@ app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
 
-const normalizeOrigin = (url) =>
-  url.trim().replace(/\/+$/, "");
+const normalizeOrigin = (value = "") =>
+  value.trim().replace(/\/+$/, "");
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  ...(process.env.FRONTEND_URL || "")
-    .split(",")
-    .map(normalizeOrigin),
-  ...(process.env.FRONTEND_URLS || "")
-    .split(",")
-    .map(normalizeOrigin),
-].filter(Boolean);
+const allowedOrigins = new Set(
+  [
+    // Production frontend
+    "https://syntecxhub-vajp-expense-tracker-ckp.vercel.app",
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin) {
-        return callback(null, true);
-      }
+    // Local development
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 
-      if (allowedOrigins.includes(normalizeOrigin(origin))) {
-        return callback(null, true);
-      }
-
-      console.warn("CORS blocked origin:", origin);
-      return callback(new Error("CORS origin not allowed"));
-    },
-    credentials: true,
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS",
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-    ],
-  })
+    // Additional frontend URLs from Vercel environment
+    ...(process.env.FRONTEND_URL || "").split(","),
+    ...(process.env.FRONTEND_URLS || "").split(","),
+  ]
+    .map(normalizeOrigin)
+    .filter(Boolean)
 );
 
+const corsOptions = {
+  origin(origin, callback) {
+    // Requests without an Origin header (health checks, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const normalizedOrigin = normalizeOrigin(origin);
+
+    if (allowedOrigins.has(normalizedOrigin)) {
+      return callback(null, true);
+    }
+
+    console.warn("CORS blocked origin:", origin);
+
+    return callback(new Error("CORS origin not allowed"));
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
+
+  optionsSuccessStatus: 204,
+};
+
+// Register CORS BEFORE API routes, database middleware,
+// JSON parsing, and application error handlers.
+app.use(cors(corsOptions));
+
+// Application-level cors() handles browser preflight
+// requests for the routes below.
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "1mb",
+  })
+);
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -75,54 +100,65 @@ app.get("/", (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    success: true,
+  const connected = mongoose.connection.readyState === 1;
+
+  res.status(connected ? 200 : 503).json({
+    success: connected,
     api: "ok",
-    database:
-      mongoose.connection.readyState === 1
-        ? "connected"
-        : "disconnected",
+    database: connected ? "connected" : "disconnected",
   });
 });
+
 
 let dbConnectionPromise = null;
 
 async function connectDB() {
   if (mongoose.connection.readyState === 1) {
-    return;
+    return mongoose.connection;
   }
 
   if (!process.env.MONGO_URI) {
-    throw new Error(
-      "MONGO_URI environment variable is missing"
-    );
+    throw new Error("MONGO_URI environment variable is missing");
   }
 
+  // Reuse a pending connection attempt to avoid duplicate
+  // connection attempts during concurrent serverless requests.
   if (!dbConnectionPromise) {
     dbConnectionPromise = mongoose
       .connect(process.env.MONGO_URI, {
         serverSelectionTimeoutMS: 10000,
       })
+      .then(() => mongoose.connection)
       .catch((error) => {
         dbConnectionPromise = null;
         throw error;
       });
   }
 
-  await dbConnectionPromise;
+  try {
+    return await dbConnectionPromise;
+  } catch (error) {
+    dbConnectionPromise = null;
+    throw error;
+  }
 }
 
-// Connect before processing API requests.
-// Health checks above remain accessible if MongoDB is unavailable.
+// Reset the cached promise if the connection drops.
+mongoose.connection.on("disconnected", () => {
+  dbConnectionPromise = null;
+});
+
 app.use("/api", async (req, res, next) => {
+  // Health checks must still work when MongoDB is offline.
+  if (req.path === "/health") {
+    return next();
+  }
+
   try {
     await connectDB();
-    next();
+    return next();
   } catch (error) {
-    console.error(
-      "MongoDB connection failed:",
-      error.message
-    );
+    console.error("MongoDB connection failed:", error.message);
 
     return res.status(503).json({
       success: false,
@@ -130,6 +166,7 @@ app.use("/api", async (req, res, next) => {
     });
   }
 });
+
 
 app.use("/api/auth", authRoutes);
 app.use("/api/transactions", transactionRoutes);
@@ -147,6 +184,7 @@ app.use((req, res) => {
   });
 });
 
+
 app.use((error, req, res, next) => {
   if (res.headersSent) {
     return next(error);
@@ -161,6 +199,7 @@ app.use((error, req, res, next) => {
 
   if (
     error instanceof SyntaxError &&
+    error.status === 400 &&
     "body" in error
   ) {
     return res.status(400).json({
@@ -177,26 +216,21 @@ app.use((error, req, res, next) => {
   });
 });
 
-
-module.exports = app;
-
+// Vercel imports this Express app as a serverless handler.
+// For local development, start listening on PORT.
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
 
   connectDB()
     .then(() => {
       app.listen(PORT, () => {
-        console.log(
-          `ExpenseFlow API running at http://localhost:${PORT}`
-        );
+        console.log(`ExpenseFlow API running on port ${PORT}`);
       });
     })
     .catch((error) => {
-      console.error(
-        "Server startup failed:",
-        error.message
-      );
+      console.error("Server startup failed:", error.message);
       process.exitCode = 1;
     });
 }
 
+module.exports = app;
