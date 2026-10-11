@@ -27,7 +27,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
 import "./Goals.css";
-import API_BASE_URL from "./api";
+
+import API_BASE_URL from "../api";
+
 
 
 
