@@ -1954,3 +1954,122 @@
     gap: 0;
   }
 }
+
+/* Goal icon picker */
+.goals-page .goal-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.goals-page .goal-icon-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px;
+  color: #b4c0c8;
+  background: #0b1013;
+  border: 1px solid #303a40;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.goals-page .goal-icon-choice svg {
+  flex-shrink: 0;
+  color: #9aaab5;
+}
+
+.goals-page .goal-icon-choice:hover {
+  color: #fff;
+  border-color: #ff3154;
+  background: rgba(255, 49, 84, 0.08);
+}
+
+.goals-page .goal-icon-choice.selected {
+  color: #fff;
+  background: rgba(255, 49, 84, 0.14);
+  border-color: #ff3154;
+  box-shadow: 0 0 0 2px rgba(255, 49, 84, 0.08);
+}
+
+.goals-page .goal-icon-choice.selected svg {
+  color: #ff3154;
+}
+
+/* Goal preview */
+.goals-page .goal-form-preview {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+  padding: 16px;
+  margin: 22px 0;
+  background: #0b1013;
+  border: 1px solid #293237;
+  border-radius: 14px;
+}
+
+.goals-page .goal-form-preview-icon {
+  display: grid;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: #ff3154;
+  background: rgba(255, 49, 84, 0.12);
+  border-radius: 13px;
+}
+
+.goals-page .goal-form-preview > div:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.goals-page .goal-form-preview span {
+  color: #ff6680;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.goals-page .goal-form-preview strong {
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.goals-page .goal-form-preview small {
+  color: #91a2af;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.goals-page .goal-modal-submit {
+  cursor: pointer;
+}
+
+.goals-page .goal-modal-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@media (max-width: 520px) {
+  .goals-page .goal-icon-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goals-page .goal-icon-choice {
+    justify-content: flex-start;
+    padding: 10px;
+  }
+}
