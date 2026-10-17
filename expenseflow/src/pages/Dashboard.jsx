@@ -29,16 +29,13 @@ import {
   Lightbulb,
   ArrowRight,
   RefreshCw,
-  TrendingUp,
   Repeat2,
   ChartNoAxesCombined,
 } from "lucide-react";
 import API_BASE_URL from "../api";
 import "./dashboard.css";
 
-const API_URL = String(API_BASE_URL || "")
-  .trim()
-  .replace(/\/+$/, "");
+const API_URL = String(API_BASE_URL || "").trim().replace(/\/+$/, "");
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: Home },
@@ -281,7 +278,17 @@ function getScoreColor(score) {
   return "#20d6a1";
 }
 
-/* Detect recurring expenses from transactions in different months. */
+/* Normalize expense names so extra spaces and capitalization do not
+   prevent recurring expense detection. */
+function normalizeExpenseName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\s]/g, "");
+}
+
+/* Find expenses appearing in at least two different months. */
 function getRecurringExpenses(transactions) {
   const groups = new Map();
 
@@ -291,23 +298,30 @@ function getRecurringExpenses(transactions) {
       const date = getDate(item);
       if (!date) return;
 
-      const name = getTransactionName(item).trim().toLowerCase();
-      if (!name) return;
+      const originalName = getTransactionName(item).trim();
+      const normalizedName = normalizeExpenseName(originalName);
 
-      if (!groups.has(name)) {
-        groups.set(name, {
-          name: getTransactionName(item),
+      if (!normalizedName) return;
+
+      if (!groups.has(normalizedName)) {
+        groups.set(normalizedName, {
+          name: originalName,
           amounts: [],
           months: new Set(),
           latestDate: date,
         });
       }
 
-      const group = groups.get(name);
-      group.amounts.push(Math.abs(getTransactionAmount(item)));
+      const group = groups.get(normalizedName);
+      const amount = Math.abs(getTransactionAmount(item));
+
+      group.amounts.push(amount);
       group.months.add(getMonthKey(date));
 
-      if (date > group.latestDate) group.latestDate = date;
+      if (date > group.latestDate) {
+        group.latestDate = date;
+        group.name = originalName;
+      }
     });
 
   return [...groups.values()]
@@ -318,38 +332,46 @@ function getRecurringExpenses(transactions) {
         group.amounts.reduce((sum, amount) => sum + amount, 0) /
         group.amounts.length,
       occurrences: group.months.size,
+      totalPaid: group.amounts.reduce((sum, amount) => sum + amount, 0),
     }))
     .sort((a, b) => b.average - a.average)
     .slice(0, 5);
 }
 
-/* Forecast using the previous three complete calendar months. */
+/* Forecast from the three complete months before the selected month. */
 function getExpenseForecast(transactions, selectedMonth) {
   const [year, month] = selectedMonth.split("-").map(Number);
   const monthlyTotals = [];
 
   for (let offset = 1; offset <= 3; offset += 1) {
     const date = new Date(year, month - 1 - offset, 1);
-    const key = getMonthKey(date);
+    const monthKey = getMonthKey(date);
 
     const total = transactions
-      .filter((item) => !isIncome(item) && inSelectedMonth(item, key))
+      .filter(
+        (item) =>
+          !isIncome(item) && inSelectedMonth(item, monthKey)
+      )
       .reduce(
         (sum, item) => sum + Math.abs(getTransactionAmount(item)),
         0
       );
 
-    monthlyTotals.push(total);
+    monthlyTotals.push({
+      month: monthKey,
+      total,
+    });
   }
 
-  const monthsWithData = monthlyTotals.filter((total) => total > 0);
+  const monthsWithData = monthlyTotals.filter((item) => item.total > 0);
+
   const average = monthsWithData.length
-    ? monthsWithData.reduce((sum, total) => sum + total, 0) /
+    ? monthsWithData.reduce((sum, item) => sum + item.total, 0) /
       monthsWithData.length
     : 0;
 
   return {
-    average,
+    average: Math.round(average),
     monthsAvailable: monthsWithData.length,
     values: monthlyTotals,
   };
@@ -472,8 +494,7 @@ function Dashboard() {
       monthTransactions
         .filter(isIncome)
         .reduce(
-          (total, item) =>
-            total + Math.abs(getTransactionAmount(item)),
+          (total, item) => total + Math.abs(getTransactionAmount(item)),
           0
         ),
     [monthTransactions]
@@ -484,8 +505,7 @@ function Dashboard() {
       monthTransactions
         .filter((item) => !isIncome(item))
         .reduce(
-          (total, item) =>
-            total + Math.abs(getTransactionAmount(item)),
+          (total, item) => total + Math.abs(getTransactionAmount(item)),
           0
         ),
     [monthTransactions]
@@ -497,40 +517,25 @@ function Dashboard() {
   }, [selectedMonth]);
 
   const previousMonthTransactions = useMemo(
-    () =>
-      transactions.filter((item) =>
-        inSelectedMonth(item, previousMonthKey)
-      ),
+    () => transactions.filter((item) => inSelectedMonth(item, previousMonthKey)),
     [transactions, previousMonthKey]
   );
 
   const previousIncome = previousMonthTransactions
     .filter(isIncome)
-    .reduce(
-      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
-      0
-    );
+    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
 
   const previousExpenses = previousMonthTransactions
     .filter((item) => !isIncome(item))
-    .reduce(
-      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
-      0
-    );
+    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
 
   const totalIncome = transactions
     .filter(isIncome)
-    .reduce(
-      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
-      0
-    );
+    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
 
   const totalExpenses = transactions
     .filter((item) => !isIncome(item))
-    .reduce(
-      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
-      0
-    );
+    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
 
   const balance =
     numberValue(user?.balance ?? user?.totalBalance) ||
@@ -561,20 +566,12 @@ function Dashboard() {
       0
     );
 
-  /*
-   * Safe to Spend:
-   * monthly income - expenses already recorded - savings target.
-   * If a budget exists, spending is also capped by remaining budget.
-   */
   const monthlyIncome =
     currentIncome > 0
       ? currentIncome
       : Math.max(0, numberValue(user?.monthlyIncome));
 
-  const savingsTarget = Math.max(
-    0,
-    numberValue(user?.savingsTarget)
-  );
+  const savingsTarget = Math.max(0, numberValue(user?.savingsTarget));
 
   const remainingAfterExpenses = monthlyIncome - currentExpenses;
 
@@ -598,6 +595,7 @@ function Dashboard() {
       ? ((currentIncome - previousIncome) / previousIncome) * 100
       : 0;
 
+  /* Dynamic spending totals grouped by the transaction's real category. */
   const categoryData = useMemo(() => {
     const totals = new Map();
 
@@ -605,33 +603,31 @@ function Dashboard() {
       .filter((item) => !isIncome(item))
       .forEach((item) => {
         const category = getCategory(item);
+        const amount = Math.abs(getTransactionAmount(item));
 
-        totals.set(
-          category,
-          (totals.get(category) || 0) +
-            Math.abs(getTransactionAmount(item))
-        );
+        totals.set(category, (totals.get(category) || 0) + amount);
       });
 
-    const total = [...totals.values()].reduce(
-      (sum, value) => sum + value,
-      0
-    );
+    const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
 
     return [...totals.entries()]
       .map(([name, amount], index) => ({
         name,
         amount,
-        percentage: total
-          ? Math.round((amount / total) * 100)
-          : 0,
+        percentage: total ? Math.round((amount / total) * 100) : 0,
         color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
       }))
       .sort((a, b) => b.amount - a.amount);
   }, [monthTransactions]);
 
+  const categoryTotal = useMemo(
+    () => categoryData.reduce((sum, item) => sum + item.amount, 0),
+    [categoryData]
+  );
+
+  /* Donut segments are calculated from category totals, not unrelated values. */
   const donutStyle = useMemo(() => {
-    if (!categoryData.length) {
+    if (!categoryTotal || !categoryData.length) {
       return {
         background: "conic-gradient(#253039 0deg 360deg)",
       };
@@ -641,23 +637,17 @@ function Dashboard() {
 
     const stops = categoryData.map((item) => {
       const start = cursor;
-      cursor +=
-        (item.amount / Math.max(currentExpenses, 1)) * 360;
-
+      cursor += (item.amount / categoryTotal) * 360;
       return `${item.color} ${start}deg ${cursor}deg`;
     });
 
     return {
       background: `conic-gradient(${stops.join(", ")})`,
     };
-  }, [categoryData, currentExpenses]);
+  }, [categoryData, categoryTotal]);
 
   const trendData = useMemo(() => {
-    const { start, end } = getPeriodStart(
-      selectedPeriod,
-      selectedMonth
-    );
-
+    const { start, end } = getPeriodStart(selectedPeriod, selectedMonth);
     const bucketMap = new Map();
 
     const count =
@@ -672,18 +662,14 @@ function Dashboard() {
     for (let i = 0; i < count; i += 1) {
       const date = new Date(start);
 
-      if (
-        selectedPeriod === "7 Days" ||
-        selectedPeriod === "30 Days"
-      ) {
+      if (selectedPeriod === "7 Days" || selectedPeriod === "30 Days") {
         date.setDate(start.getDate() + i);
       } else {
         date.setMonth(start.getMonth() + i, 1);
       }
 
       const key =
-        selectedPeriod === "7 Days" ||
-        selectedPeriod === "30 Days"
+        selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
           ? getMonthKey(date) + `-${String(date.getDate()).padStart(2, "0")}`
           : getMonthKey(date);
 
@@ -701,8 +687,7 @@ function Dashboard() {
       if (!date || date < start || date > end) return;
 
       const key =
-        selectedPeriod === "7 Days" ||
-        selectedPeriod === "30 Days"
+        selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
           ? getMonthKey(date) + `-${String(date.getDate()).padStart(2, "0")}`
           : getMonthKey(date);
 
@@ -723,10 +708,7 @@ function Dashboard() {
   const chartPaths = useMemo(() => {
     const maxValue = Math.max(
       1,
-      ...trendData.flatMap((item) => [
-        item.income,
-        item.expenses,
-      ])
+      ...trendData.flatMap((item) => [item.income, item.expenses])
     );
 
     const width = 760;
@@ -740,8 +722,7 @@ function Dashboard() {
           trendData.length <= 1
             ? width / 2
             : padX +
-              (index / (trendData.length - 1)) *
-                (width - padX * 2);
+              (index / (trendData.length - 1)) * (width - padX * 2);
 
         const y =
           height -
@@ -766,8 +747,7 @@ function Dashboard() {
       [...monthTransactions]
         .sort(
           (a, b) =>
-            (getDate(b)?.getTime() || 0) -
-            (getDate(a)?.getTime() || 0)
+            (getDate(b)?.getTime() || 0) - (getDate(a)?.getTime() || 0)
         )
         .slice(0, 5),
     [monthTransactions]
@@ -780,9 +760,7 @@ function Dashboard() {
         const saved = getGoalSaved(goal);
 
         const percentage =
-          target > 0
-            ? Math.min(100, Math.round((saved / target) * 100))
-            : 0;
+          target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
 
         return {
           ...goal,
@@ -809,10 +787,7 @@ function Dashboard() {
 
   const budgetUsage =
     budgetTotal > 0
-      ? Math.min(
-          100,
-          Math.round((currentExpenses / budgetTotal) * 100)
-        )
+      ? Math.min(100, Math.round((currentExpenses / budgetTotal) * 100))
       : null;
 
   const savingsRate =
@@ -844,7 +819,7 @@ function Dashboard() {
   const scoreColor = getScoreColor(financialScore);
   const circumference = 2 * Math.PI * 48;
   const scoreOffset =
-    circumference * (1 - financialScore / 100);
+    circumference * (1 - Math.max(0, Math.min(100, financialScore)) / 100);
 
   const notifications = useMemo(() => {
     const list = [];
@@ -925,9 +900,7 @@ function Dashboard() {
   const changeMonth = (amount) => {
     const [year, month] = selectedMonth.split("-").map(Number);
 
-    setSelectedMonth(
-      getMonthKey(new Date(year, month - 1 + amount, 1))
-    );
+    setSelectedMonth(getMonthKey(new Date(year, month - 1 + amount, 1)));
   };
 
   const monthOptions = useMemo(() => {
@@ -935,9 +908,7 @@ function Dashboard() {
     const [year, month] = selectedMonth.split("-").map(Number);
 
     for (let offset = -12; offset <= 1; offset += 1) {
-      options.push(
-        getMonthKey(new Date(year, month - 1 + offset, 1))
-      );
+      options.push(getMonthKey(new Date(year, month - 1 + offset, 1)));
     }
 
     return [...new Set(options)].sort().reverse();
@@ -1041,9 +1012,7 @@ function Dashboard() {
                 <Bell size={21} />
                 {unreadNotifications > 0 && (
                   <span className="notification-count">
-                    {unreadNotifications > 9
-                      ? "9+"
-                      : unreadNotifications}
+                    {unreadNotifications > 9 ? "9+" : unreadNotifications}
                   </span>
                 )}
               </button>
@@ -1052,30 +1021,21 @@ function Dashboard() {
                 <div className="notification-dropdown">
                   <div className="notification-header">
                     <strong>Notifications</strong>
-                    <button
-                      type="button"
-                      onClick={markNotificationsRead}
-                    >
+                    <button type="button" onClick={markNotificationsRead}>
                       Mark all read
                     </button>
                   </div>
 
                   {notifications.map((notification) => {
                     const Icon = notification.icon;
-                    const isRead = readNotifications.includes(
-                      notification.id
-                    );
+                    const isRead = readNotifications.includes(notification.id);
 
                     return (
                       <div
                         key={notification.id}
-                        className={`notification-row ${
-                          isRead ? "is-read" : ""
-                        }`}
+                        className={`notification-row ${isRead ? "is-read" : ""}`}
                       >
-                        <span
-                          className={`notification-icon ${notification.type}`}
-                        >
+                        <span className={`notification-icon ${notification.type}`}>
                           <Icon size={17} />
                         </span>
 
@@ -1220,9 +1180,7 @@ function Dashboard() {
                   <button
                     type="button"
                     key={period}
-                    className={
-                      selectedPeriod === period ? "selected" : ""
-                    }
+                    className={selectedPeriod === period ? "selected" : ""}
                     onClick={() => setSelectedPeriod(period)}
                   >
                     {period}
@@ -1295,20 +1253,12 @@ function Dashboard() {
             <div className="chart-x-labels">
               {trendData
                 .filter((item, index) => {
-                  const interval = Math.max(
-                    1,
-                    Math.ceil(trendData.length / 6)
-                  );
-
-                  return (
-                    index % interval === 0 ||
-                    index === trendData.length - 1
-                  );
+                  const interval = Math.max(1, Math.ceil(trendData.length / 6));
+                  return index % interval === 0 || index === trendData.length - 1;
                 })
                 .map((item) => (
                   <span key={item.key}>
-                    {selectedPeriod === "7 Days" ||
-                    selectedPeriod === "30 Days"
+                    {selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
                       ? item.date.toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
@@ -1341,7 +1291,7 @@ function Dashboard() {
             <div className="category-chart">
               <div className="donut" style={donutStyle}>
                 <div className="donut-inner">
-                  <strong>{money(currentExpenses)}</strong>
+                  <strong>{money(categoryTotal)}</strong>
                   <span>Total Spent</span>
                 </div>
               </div>
@@ -1371,7 +1321,6 @@ function Dashboard() {
           </div>
         </section>
 
-        {/* New features: recurring expenses and expense forecasting */}
         <section className="dashboard-feature-grid">
           <div className="dashboard-box feature-card">
             <div className="dashboard-box-header">
@@ -1386,7 +1335,7 @@ function Dashboard() {
             {recurringExpenses.length ? (
               <div className="feature-list">
                 {recurringExpenses.map((item) => (
-                  <div className="feature-row" key={item.name}>
+                  <div className="feature-row" key={normalizeExpenseName(item.name)}>
                     <div className="feature-row-icon">
                       <RefreshCw size={17} />
                     </div>
@@ -1438,6 +1387,22 @@ function Dashboard() {
               <span>Selected month</span>
               <strong>{getMonthLabel(selectedMonth)}</strong>
             </div>
+
+            {expenseForecast.monthsAvailable > 0 && (
+              <div className="feature-list">
+                {expenseForecast.values.map((item) => (
+                  <div className="feature-row" key={item.month}>
+                    <div className="feature-row-info">
+                      <strong>{getMonthLabel(item.month)}</strong>
+                      <small>
+                        {item.total > 0 ? "Recorded expenses" : "No expenses recorded"}
+                      </small>
+                    </div>
+                    <strong>{money(item.total)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -1456,9 +1421,7 @@ function Dashboard() {
                   const category = getCategory(transaction);
                   const Icon = categoryIcon(category);
                   const income = isIncome(transaction);
-                  const amount = Math.abs(
-                    getTransactionAmount(transaction)
-                  );
+                  const amount = Math.abs(getTransactionAmount(transaction));
 
                   return (
                     <div
@@ -1488,19 +1451,14 @@ function Dashboard() {
 
                       <strong
                         className={
-                          income
-                            ? "transaction-income"
-                            : "transaction-expense"
+                          income ? "transaction-income" : "transaction-expense"
                         }
                       >
                         {income ? "+" : "−"}
                         {money(amount)}
                       </strong>
 
-                      <ArrowRight
-                        size={16}
-                        className="transaction-arrow"
-                      />
+                      <ArrowRight size={16} className="transaction-arrow" />
                     </div>
                   );
                 })
@@ -1508,9 +1466,7 @@ function Dashboard() {
                 <div className="dashboard-empty-state">
                   <CreditCard size={25} />
                   <strong>No transactions yet</strong>
-                  <span>
-                    Your recent transactions will appear here.
-                  </span>
+                  <span>Your recent transactions will appear here.</span>
                   <Link to="/transactions">Add a transaction</Link>
                 </div>
               )}
@@ -1532,12 +1488,8 @@ function Dashboard() {
                   role="img"
                   aria-label={`Financial health ${financialScore} out of 100`}
                 >
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="48"
-                    className="health-bg"
-                  />
+                  <circle cx="60" cy="60" r="48" className="health-bg" />
+
                   <circle
                     cx="60"
                     cy="60"
@@ -1546,6 +1498,7 @@ function Dashboard() {
                     stroke={scoreColor}
                     strokeDasharray={circumference}
                     strokeDashoffset={scoreOffset}
+                    strokeLinecap="round"
                     transform="rotate(-90 60 60)"
                   />
                 </svg>
@@ -1615,11 +1568,7 @@ function Dashboard() {
                   return (
                     <div
                       className="dashboard-goal-row"
-                      key={
-                        goal._id ||
-                        goal.id ||
-                        `${goal.title}-${index}`
-                      }
+                      key={goal._id || goal.id || `${goal.title}-${index}`}
                     >
                       <div className="dashboard-goal-main">
                         <div className="dashboard-goal-title">
@@ -1637,10 +1586,7 @@ function Dashboard() {
                           <span
                             className="goal-moving-icon"
                             style={{
-                              left: `${Math.min(
-                                96,
-                                Math.max(4, goal.percentage)
-                              )}%`,
+                              left: `${Math.min(96, Math.max(4, goal.percentage))}%`,
                               color: goal.color,
                             }}
                           >
@@ -1697,9 +1643,7 @@ function Dashboard() {
                   {previousExpenses > 0
                     ? `Expenses ${
                         expenseChange <= 0 ? "decreased" : "increased"
-                      } by ${Math.abs(
-                        Math.round(expenseChange)
-                      )}% compared with last month.`
+                      } by ${Math.abs(Math.round(expenseChange))}% compared with last month.`
                     : "Your month-over-month spending trend will appear here."}
                 </p>
               </div>
@@ -1709,8 +1653,8 @@ function Dashboard() {
                   <Info size={19} />
                 </span>
                 <p>
-                  {money(safeToSpend)} available after considering your
-                  current expenses and savings target.
+                  {money(safeToSpend)} available after considering your current
+                  expenses and savings target.
                 </p>
               </div>
             </div>
@@ -1722,8 +1666,8 @@ function Dashboard() {
             </div>
             <h2>Before You Buy</h2>
             <p>
-              Thinking about a purchase? See how it could affect your
-              goals and budget.
+              Thinking about a purchase? See how it could affect your goals and
+              budget.
             </p>
             <Link to="/simulator" className="before-buy-button">
               Simulate Purchase <ArrowRight size={16} />
