@@ -28,8 +28,10 @@ import {
   Crown,
   Lightbulb,
   ArrowRight,
-  X,
   RefreshCw,
+  TrendingUp,
+  Repeat2,
+  ChartNoAxesCombined,
 } from "lucide-react";
 import API_BASE_URL from "../api";
 import "./dashboard.css";
@@ -70,9 +72,11 @@ const money = (value) =>
 
 const numberValue = (value) => {
   if (typeof value === "number") return value;
+
   if (typeof value === "string") {
     return Number(value.replace(/[₹,\s]/g, "")) || 0;
   }
+
   return 0;
 };
 
@@ -106,6 +110,7 @@ const getDate = (item) => {
 
 const formatDate = (date) => {
   if (!date) return "Date unavailable";
+
   return date.toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
@@ -113,13 +118,14 @@ const formatDate = (date) => {
   });
 };
 
-const getInitials = (name) => {
-  const parts = String(name || "User").trim().split(/\s+/).filter(Boolean);
-  return parts
+const getInitials = (name) =>
+  String(name || "User")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0].toUpperCase())
     .join("");
-};
 
 const getUserName = (user) =>
   user?.fullName ||
@@ -131,8 +137,7 @@ const getUserName = (user) =>
   user?.email?.split("@")[0] ||
   "User";
 
-const getUserEmail = (user) =>
-  user?.email || user?.user?.email || "";
+const getUserEmail = (user) => user?.email || user?.user?.email || "";
 
 const getTransactionAmount = (item) =>
   numberValue(
@@ -158,7 +163,7 @@ const isIncome = (item) => {
   return (
     item?.isIncome === true ||
     item?.isExpense === false ||
-    item?.category?.toLowerCase?.() === "income"
+    String(item?.category || "").toLowerCase() === "income"
   );
 };
 
@@ -199,28 +204,44 @@ const getGoalName = (goal) =>
 
 const goalIcon = (name) => {
   const value = String(name).toLowerCase();
-  if (/laptop|computer|phone|device|gadget|tech/.test(value)) return Laptop;
-  if (/emergency|saving|fund|money/.test(value)) return PiggyBank;
-  if (/trip|travel|holiday|goa|flight/.test(value)) return Plane;
+
+  if (/laptop|computer|phone|device|gadget|tech/.test(value)) {
+    return Laptop;
+  }
+
+  if (/emergency|saving|fund|money/.test(value)) {
+    return PiggyBank;
+  }
+
+  if (/trip|travel|holiday|goa|flight/.test(value)) {
+    return Plane;
+  }
+
   return Target;
 };
 
 const categoryIcon = (category) => {
   const value = String(category).toLowerCase();
+
   if (/food|grocery|dining|restaurant/.test(value)) return Utensils;
   if (/transport|travel|metro|fuel|cab/.test(value)) return TrainFront;
   if (/shop|amazon|clothes/.test(value)) return ShoppingBag;
   if (/bill|utility|rent|recharge/.test(value)) return Receipt;
   if (/income|salary|earning/.test(value)) return CircleDollarSign;
+
   return Wallet;
 };
 
 function getMonthKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function getMonthLabel(monthKey) {
   const [year, month] = monthKey.split("-").map(Number);
+
   return new Date(year, month - 1, 1).toLocaleDateString("en-IN", {
     month: "long",
     year: "numeric",
@@ -260,6 +281,80 @@ function getScoreColor(score) {
   return "#20d6a1";
 }
 
+/* Detect recurring expenses from transactions in different months. */
+function getRecurringExpenses(transactions) {
+  const groups = new Map();
+
+  transactions
+    .filter((item) => !isIncome(item))
+    .forEach((item) => {
+      const date = getDate(item);
+      if (!date) return;
+
+      const name = getTransactionName(item).trim().toLowerCase();
+      if (!name) return;
+
+      if (!groups.has(name)) {
+        groups.set(name, {
+          name: getTransactionName(item),
+          amounts: [],
+          months: new Set(),
+          latestDate: date,
+        });
+      }
+
+      const group = groups.get(name);
+      group.amounts.push(Math.abs(getTransactionAmount(item)));
+      group.months.add(getMonthKey(date));
+
+      if (date > group.latestDate) group.latestDate = date;
+    });
+
+  return [...groups.values()]
+    .filter((group) => group.months.size >= 2)
+    .map((group) => ({
+      ...group,
+      average:
+        group.amounts.reduce((sum, amount) => sum + amount, 0) /
+        group.amounts.length,
+      occurrences: group.months.size,
+    }))
+    .sort((a, b) => b.average - a.average)
+    .slice(0, 5);
+}
+
+/* Forecast using the previous three complete calendar months. */
+function getExpenseForecast(transactions, selectedMonth) {
+  const [year, month] = selectedMonth.split("-").map(Number);
+  const monthlyTotals = [];
+
+  for (let offset = 1; offset <= 3; offset += 1) {
+    const date = new Date(year, month - 1 - offset, 1);
+    const key = getMonthKey(date);
+
+    const total = transactions
+      .filter((item) => !isIncome(item) && inSelectedMonth(item, key))
+      .reduce(
+        (sum, item) => sum + Math.abs(getTransactionAmount(item)),
+        0
+      );
+
+    monthlyTotals.push(total);
+  }
+
+  const monthsWithData = monthlyTotals.filter((total) => total > 0);
+  const average = monthsWithData.length
+    ? monthsWithData.reduce((sum, total) => sum + total, 0) /
+      monthsWithData.length
+    : 0;
+
+  return {
+    average,
+    monthsAvailable: monthsWithData.length,
+    values: monthlyTotals,
+  };
+}
+
 function Dashboard() {
   const [user, setUser] = useState(() => {
     try {
@@ -288,8 +383,7 @@ function Dashboard() {
 
   useEffect(() => {
     try {
-      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-      setUser(storedUser);
+      setUser(JSON.parse(localStorage.getItem("user") || "{}"));
     } catch {
       setUser({});
     }
@@ -322,7 +416,6 @@ function Dashboard() {
         "Content-Type": "application/json",
       };
 
-      // If your backend uses different endpoint names, update them here.
       const requests = [
         ["/api/transactions", setTransactions],
         ["/api/goals", setGoals],
@@ -333,15 +426,18 @@ function Dashboard() {
         requests.map(async ([path, setter]) => {
           try {
             const response = await fetch(`${API_URL}${path}`, { headers });
+
             if (!response.ok) {
               throw new Error(`${path}: HTTP ${response.status}`);
             }
 
             const data = await response.json();
+
             if (!cancelled) setter(getArray(data));
             return { ok: true, path };
           } catch (error) {
             console.warn(`Dashboard data unavailable (${path}):`, error);
+
             if (!cancelled) setter([]);
             return { ok: false, path };
           }
@@ -349,12 +445,12 @@ function Dashboard() {
       );
 
       if (!cancelled) {
-        const failed = results.filter((result) => !result.ok);
-        if (failed.length === results.length) {
+        if (results.every((result) => !result.ok)) {
           setLoadError(
             "Could not load dashboard data. Check your backend API routes and connection."
           );
         }
+
         setLoading(false);
       }
     };
@@ -375,7 +471,11 @@ function Dashboard() {
     () =>
       monthTransactions
         .filter(isIncome)
-        .reduce((total, item) => total + Math.abs(getTransactionAmount(item)), 0),
+        .reduce(
+          (total, item) =>
+            total + Math.abs(getTransactionAmount(item)),
+          0
+        ),
     [monthTransactions]
   );
 
@@ -383,7 +483,11 @@ function Dashboard() {
     () =>
       monthTransactions
         .filter((item) => !isIncome(item))
-        .reduce((total, item) => total + Math.abs(getTransactionAmount(item)), 0),
+        .reduce(
+          (total, item) =>
+            total + Math.abs(getTransactionAmount(item)),
+          0
+        ),
     [monthTransactions]
   );
 
@@ -402,19 +506,31 @@ function Dashboard() {
 
   const previousIncome = previousMonthTransactions
     .filter(isIncome)
-    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
+    .reduce(
+      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
+      0
+    );
 
   const previousExpenses = previousMonthTransactions
     .filter((item) => !isIncome(item))
-    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
+    .reduce(
+      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
+      0
+    );
 
   const totalIncome = transactions
     .filter(isIncome)
-    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
+    .reduce(
+      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
+      0
+    );
 
   const totalExpenses = transactions
     .filter((item) => !isIncome(item))
-    .reduce((sum, item) => sum + Math.abs(getTransactionAmount(item)), 0);
+    .reduce(
+      (sum, item) => sum + Math.abs(getTransactionAmount(item)),
+      0
+    );
 
   const balance =
     numberValue(user?.balance ?? user?.totalBalance) ||
@@ -423,9 +539,15 @@ function Dashboard() {
   const budgetTotal = budgets
     .filter((budget) => {
       const date = budget?.month || budget?.date || budget?.createdAt;
+
       if (!date) return true;
+
       const parsed = new Date(date);
-      return Number.isNaN(parsed.getTime()) || getMonthKey(parsed) === selectedMonth;
+
+      return (
+        Number.isNaN(parsed.getTime()) ||
+        getMonthKey(parsed) === selectedMonth
+      );
     })
     .reduce(
       (sum, budget) =>
@@ -439,11 +561,31 @@ function Dashboard() {
       0
     );
 
+  /*
+   * Safe to Spend:
+   * monthly income - expenses already recorded - savings target.
+   * If a budget exists, spending is also capped by remaining budget.
+   */
+  const monthlyIncome =
+    currentIncome > 0
+      ? currentIncome
+      : Math.max(0, numberValue(user?.monthlyIncome));
+
+  const savingsTarget = Math.max(
+    0,
+    numberValue(user?.savingsTarget)
+  );
+
+  const remainingAfterExpenses = monthlyIncome - currentExpenses;
+
   const safeToSpend = Math.max(
     0,
-    budgetTotal > 0
-      ? budgetTotal - currentExpenses
-      : currentIncome - currentExpenses
+    Math.min(
+      remainingAfterExpenses - savingsTarget,
+      budgetTotal > 0
+        ? budgetTotal - currentExpenses
+        : remainingAfterExpenses - savingsTarget
+    )
   );
 
   const expenseChange =
@@ -463,19 +605,26 @@ function Dashboard() {
       .filter((item) => !isIncome(item))
       .forEach((item) => {
         const category = getCategory(item);
+
         totals.set(
           category,
-          (totals.get(category) || 0) + Math.abs(getTransactionAmount(item))
+          (totals.get(category) || 0) +
+            Math.abs(getTransactionAmount(item))
         );
       });
 
-    const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
+    const total = [...totals.values()].reduce(
+      (sum, value) => sum + value,
+      0
+    );
 
     return [...totals.entries()]
       .map(([name, amount], index) => ({
         name,
         amount,
-        percentage: total ? Math.round((amount / total) * 100) : 0,
+        percentage: total
+          ? Math.round((amount / total) * 100)
+          : 0,
         color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
       }))
       .sort((a, b) => b.amount - a.amount);
@@ -489,20 +638,29 @@ function Dashboard() {
     }
 
     let cursor = 0;
+
     const stops = categoryData.map((item) => {
       const start = cursor;
-      cursor += (item.amount / Math.max(currentExpenses, 1)) * 360;
+      cursor +=
+        (item.amount / Math.max(currentExpenses, 1)) * 360;
+
       return `${item.color} ${start}deg ${cursor}deg`;
     });
 
-    return { background: `conic-gradient(${stops.join(", ")})` };
+    return {
+      background: `conic-gradient(${stops.join(", ")})`,
+    };
   }, [categoryData, currentExpenses]);
 
   const trendData = useMemo(() => {
-    const { start, end } = getPeriodStart(selectedPeriod, selectedMonth);
+    const { start, end } = getPeriodStart(
+      selectedPeriod,
+      selectedMonth
+    );
+
     const bucketMap = new Map();
 
-    const monthCount =
+    const count =
       selectedPeriod === "7 Days"
         ? 7
         : selectedPeriod === "30 Days"
@@ -511,17 +669,22 @@ function Dashboard() {
             ? 6
             : 12;
 
-    for (let i = 0; i < monthCount; i += 1) {
+    for (let i = 0; i < count; i += 1) {
       const date = new Date(start);
-      if (selectedPeriod === "7 Days" || selectedPeriod === "30 Days") {
+
+      if (
+        selectedPeriod === "7 Days" ||
+        selectedPeriod === "30 Days"
+      ) {
         date.setDate(start.getDate() + i);
       } else {
         date.setMonth(start.getMonth() + i, 1);
       }
 
       const key =
-        selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
-          ? date.toISOString().slice(0, 10)
+        selectedPeriod === "7 Days" ||
+        selectedPeriod === "30 Days"
+          ? getMonthKey(date) + `-${String(date.getDate()).padStart(2, "0")}`
           : getMonthKey(date);
 
       bucketMap.set(key, {
@@ -534,16 +697,19 @@ function Dashboard() {
 
     transactions.forEach((item) => {
       const date = getDate(item);
+
       if (!date || date < start || date > end) return;
 
       const key =
-        selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
-          ? date.toISOString().slice(0, 10)
+        selectedPeriod === "7 Days" ||
+        selectedPeriod === "30 Days"
+          ? getMonthKey(date) + `-${String(date.getDate()).padStart(2, "0")}`
           : getMonthKey(date);
 
       if (!bucketMap.has(key)) return;
 
       const bucket = bucketMap.get(key);
+
       if (isIncome(item)) {
         bucket.income += Math.abs(getTransactionAmount(item));
       } else {
@@ -557,7 +723,10 @@ function Dashboard() {
   const chartPaths = useMemo(() => {
     const maxValue = Math.max(
       1,
-      ...trendData.flatMap((item) => [item.income, item.expenses])
+      ...trendData.flatMap((item) => [
+        item.income,
+        item.expenses,
+      ])
     );
 
     const width = 760;
@@ -570,7 +739,10 @@ function Dashboard() {
         const x =
           trendData.length <= 1
             ? width / 2
-            : padX + (index / (trendData.length - 1)) * (width - padX * 2);
+            : padX +
+              (index / (trendData.length - 1)) *
+                (width - padX * 2);
+
         const y =
           height -
           padY -
@@ -592,7 +764,11 @@ function Dashboard() {
   const recentTransactions = useMemo(
     () =>
       [...monthTransactions]
-        .sort((a, b) => (getDate(b)?.getTime() || 0) - (getDate(a)?.getTime() || 0))
+        .sort(
+          (a, b) =>
+            (getDate(b)?.getTime() || 0) -
+            (getDate(a)?.getTime() || 0)
+        )
         .slice(0, 5),
     [monthTransactions]
   );
@@ -602,9 +778,11 @@ function Dashboard() {
       goals.slice(0, 4).map((goal, index) => {
         const target = getGoalTarget(goal);
         const saved = getGoalSaved(goal);
-        const percentage = target > 0
-          ? Math.min(100, Math.round((saved / target) * 100))
-          : 0;
+
+        const percentage =
+          target > 0
+            ? Math.min(100, Math.round((saved / target) * 100))
+            : 0;
 
         return {
           ...goal,
@@ -619,13 +797,34 @@ function Dashboard() {
     [goals]
   );
 
-  const budgetUsage = budgetTotal > 0
-    ? Math.min(100, Math.round((currentExpenses / budgetTotal) * 100))
-    : null;
+  const recurringExpenses = useMemo(
+    () => getRecurringExpenses(transactions),
+    [transactions]
+  );
 
-  const savingsRate = currentIncome > 0
-    ? Math.max(0, Math.min(100, ((currentIncome - currentExpenses) / currentIncome) * 100))
-    : 0;
+  const expenseForecast = useMemo(
+    () => getExpenseForecast(transactions, selectedMonth),
+    [transactions, selectedMonth]
+  );
+
+  const budgetUsage =
+    budgetTotal > 0
+      ? Math.min(
+          100,
+          Math.round((currentExpenses / budgetTotal) * 100)
+        )
+      : null;
+
+  const savingsRate =
+    currentIncome > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            ((currentIncome - currentExpenses) / currentIncome) * 100
+          )
+        )
+      : 0;
 
   const financialScore = Math.round(
     currentIncome === 0 && currentExpenses === 0
@@ -635,14 +834,17 @@ function Dashboard() {
           Math.min(
             100,
             savingsRate * 0.65 +
-              (budgetUsage === null ? 20 : Math.max(0, 100 - budgetUsage) * 0.35)
+              (budgetUsage === null
+                ? 20
+                : Math.max(0, 100 - budgetUsage) * 0.35)
           )
         )
   );
 
   const scoreColor = getScoreColor(financialScore);
   const circumference = 2 * Math.PI * 48;
-  const scoreOffset = circumference * (1 - financialScore / 100);
+  const scoreOffset =
+    circumference * (1 - financialScore / 100);
 
   const notifications = useMemo(() => {
     const list = [];
@@ -657,7 +859,20 @@ function Dashboard() {
       });
     }
 
-    const nextGoal = goalData.find((goal) => goal.percentage > 0 && goal.percentage < 100);
+    if (budgetUsage !== null) {
+      list.push({
+        id: "budget-usage",
+        icon: AlertTriangle,
+        type: budgetUsage >= 80 ? "yellow" : "green",
+        text: `You have used ${budgetUsage}% of your monthly budget.`,
+        time: `${money(budgetTotal - currentExpenses)} remaining`,
+      });
+    }
+
+    const nextGoal = goalData.find(
+      (goal) => goal.percentage > 0 && goal.percentage < 100
+    );
+
     if (nextGoal) {
       list.push({
         id: "goal-progress",
@@ -668,17 +883,17 @@ function Dashboard() {
       });
     }
 
-    if (budgetUsage !== null) {
+    if (recurringExpenses.length) {
       list.push({
-        id: "budget-usage",
-        icon: AlertTriangle,
-        type: budgetUsage >= 80 ? "yellow" : "green",
-        text: `You have used ${budgetUsage}% of your monthly budget.`,
-        time: money(budgetTotal - currentExpenses) + " remaining",
+        id: "recurring",
+        icon: Repeat2,
+        type: "yellow",
+        text: `${recurringExpenses.length} recurring expense(s) detected from your transaction history.`,
+        time: "Spending pattern",
       });
     }
 
-    if (list.length === 0) {
+    if (!list.length) {
       list.push({
         id: "welcome",
         icon: Info,
@@ -689,7 +904,15 @@ function Dashboard() {
     }
 
     return list;
-  }, [categoryData, goalData, budgetUsage, budgetTotal, currentExpenses, selectedMonth]);
+  }, [
+    categoryData,
+    budgetUsage,
+    budgetTotal,
+    currentExpenses,
+    goalData,
+    recurringExpenses,
+    selectedMonth,
+  ]);
 
   const unreadNotifications = notifications.filter(
     (item) => !readNotifications.includes(item.id)
@@ -701,15 +924,22 @@ function Dashboard() {
 
   const changeMonth = (amount) => {
     const [year, month] = selectedMonth.split("-").map(Number);
-    setSelectedMonth(getMonthKey(new Date(year, month - 1 + amount, 1)));
+
+    setSelectedMonth(
+      getMonthKey(new Date(year, month - 1 + amount, 1))
+    );
   };
 
   const monthOptions = useMemo(() => {
     const options = [];
     const [year, month] = selectedMonth.split("-").map(Number);
+
     for (let offset = -12; offset <= 1; offset += 1) {
-      options.push(getMonthKey(new Date(year, month - 1 + offset, 1)));
+      options.push(
+        getMonthKey(new Date(year, month - 1 + offset, 1))
+      );
     }
+
     return [...new Set(options)].sort().reverse();
   }, [selectedMonth]);
 
@@ -756,7 +986,9 @@ function Dashboard() {
           <div className="dashboard-welcome">
             <h1>Hello, {userName} 👋</h1>
             <p>Here's your financial overview.</p>
-            {userEmail && <span className="dashboard-user-email">{userEmail}</span>}
+            {userEmail && (
+              <span className="dashboard-user-email">{userEmail}</span>
+            )}
           </div>
 
           <div className="dashboard-header-actions">
@@ -766,7 +998,6 @@ function Dashboard() {
                 className="dashboard-month-button"
                 onClick={() => changeMonth(-1)}
                 aria-label="Previous month"
-                title="Previous month"
               >
                 ‹
               </button>
@@ -791,7 +1022,6 @@ function Dashboard() {
                 className="dashboard-month-next"
                 onClick={() => changeMonth(1)}
                 aria-label="Next month"
-                title="Next month"
               >
                 <ChevronDown size={16} />
               </button>
@@ -811,7 +1041,9 @@ function Dashboard() {
                 <Bell size={21} />
                 {unreadNotifications > 0 && (
                   <span className="notification-count">
-                    {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                    {unreadNotifications > 9
+                      ? "9+"
+                      : unreadNotifications}
                   </span>
                 )}
               </button>
@@ -820,28 +1052,41 @@ function Dashboard() {
                 <div className="notification-dropdown">
                   <div className="notification-header">
                     <strong>Notifications</strong>
-                    <button type="button" onClick={markNotificationsRead}>
+                    <button
+                      type="button"
+                      onClick={markNotificationsRead}
+                    >
                       Mark all read
                     </button>
                   </div>
 
                   {notifications.map((notification) => {
                     const Icon = notification.icon;
-                    const isRead = readNotifications.includes(notification.id);
+                    const isRead = readNotifications.includes(
+                      notification.id
+                    );
 
                     return (
                       <div
                         key={notification.id}
-                        className={`notification-row ${isRead ? "is-read" : ""}`}
+                        className={`notification-row ${
+                          isRead ? "is-read" : ""
+                        }`}
                       >
-                        <span className={`notification-icon ${notification.type}`}>
+                        <span
+                          className={`notification-icon ${notification.type}`}
+                        >
                           <Icon size={17} />
                         </span>
+
                         <div>
                           <p>{notification.text}</p>
                           <small>{notification.time}</small>
                         </div>
-                        {!isRead && <span className="notification-unread-dot" />}
+
+                        {!isRead && (
+                          <span className="notification-unread-dot" />
+                        )}
                       </div>
                     );
                   })}
@@ -867,9 +1112,14 @@ function Dashboard() {
                 <div className="dashboard-profile-menu">
                   <strong>{userName}</strong>
                   {userEmail && <small>{userEmail}</small>}
-                  <Link to="/profile" onClick={() => setShowProfileMenu(false)}>
+
+                  <Link
+                    to="/profile"
+                    onClick={() => setShowProfileMenu(false)}
+                  >
                     <User size={16} /> My Profile
                   </Link>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -890,7 +1140,10 @@ function Dashboard() {
           <div className="dashboard-data-message" role="status">
             <Info size={18} />
             <span>{loadError}</span>
-            <button type="button" onClick={() => window.location.reload()}>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+            >
               <RefreshCw size={15} /> Retry
             </button>
           </div>
@@ -902,16 +1155,25 @@ function Dashboard() {
             icon={<Wallet size={22} />}
             title="Total Balance"
             value={money(balance)}
-            change={previousMonthTransactions.length
-              ? `${Math.abs(Math.round(
-                  (currentIncome - currentExpenses -
-                    (previousIncome - previousExpenses)) /
-                    Math.max(1, Math.abs(previousIncome - previousExpenses)) *
-                    100
-                ))}% vs last month`
-              : "Based on loaded transactions"}
+            change={
+              previousMonthTransactions.length
+                ? `${Math.abs(
+                    Math.round(
+                      ((currentIncome -
+                        currentExpenses -
+                        (previousIncome - previousExpenses)) /
+                        Math.max(
+                          1,
+                          Math.abs(previousIncome - previousExpenses)
+                        )) *
+                        100
+                    )
+                  )}% vs last month`
+                : "Based on loaded transactions"
+            }
             positive={balance >= 0}
           />
+
           <StatCard
             type="income"
             icon={<ArrowUpRight size={22} />}
@@ -920,6 +1182,7 @@ function Dashboard() {
             change={`${Math.abs(Math.round(incomeChange))}% vs last month`}
             positive={incomeChange >= 0}
           />
+
           <StatCard
             type="expense"
             icon={<ArrowDownRight size={22} />}
@@ -928,12 +1191,19 @@ function Dashboard() {
             change={`${Math.abs(Math.round(expenseChange))}% vs last month`}
             positive={expenseChange <= 0}
           />
+
           <StatCard
             type="safe"
             icon={<CircleDollarSign size={22} />}
             title="Safe to Spend"
             value={money(safeToSpend)}
-            customText={budgetTotal > 0 ? "After budgeted expenses" : "Income minus expenses"}
+            customText={
+              savingsTarget > 0
+                ? "After expenses and savings target"
+                : budgetTotal > 0
+                  ? "Based on remaining budget"
+                  : "Income minus expenses"
+            }
           />
         </section>
 
@@ -950,7 +1220,9 @@ function Dashboard() {
                   <button
                     type="button"
                     key={period}
-                    className={selectedPeriod === period ? "selected" : ""}
+                    className={
+                      selectedPeriod === period ? "selected" : ""
+                    }
                     onClick={() => setSelectedPeriod(period)}
                   >
                     {period}
@@ -960,13 +1232,17 @@ function Dashboard() {
             </div>
 
             <div className="chart-legend-new">
-              <span><i className="legend-dot income-dot" /> Income</span>
-              <span><i className="legend-dot expense-dot" /> Expenses</span>
+              <span>
+                <i className="legend-dot income-dot" /> Income
+              </span>
+              <span>
+                <i className="legend-dot expense-dot" /> Expenses
+              </span>
             </div>
 
             <div className="line-chart-wrapper">
               <div className="chart-y-labels">
-                <span>{money(chartPaths.max).replace("₹", "₹")}</span>
+                <span>{money(chartPaths.max)}</span>
                 <span>{money(chartPaths.max * 0.75)}</span>
                 <span>{money(chartPaths.max * 0.5)}</span>
                 <span>{money(chartPaths.max * 0.25)}</span>
@@ -1019,17 +1295,27 @@ function Dashboard() {
             <div className="chart-x-labels">
               {trendData
                 .filter((item, index) => {
-                  const interval = Math.max(1, Math.ceil(trendData.length / 6));
-                  return index % interval === 0 || index === trendData.length - 1;
+                  const interval = Math.max(
+                    1,
+                    Math.ceil(trendData.length / 6)
+                  );
+
+                  return (
+                    index % interval === 0 ||
+                    index === trendData.length - 1
+                  );
                 })
                 .map((item) => (
                   <span key={item.key}>
-                    {selectedPeriod === "7 Days" || selectedPeriod === "30 Days"
+                    {selectedPeriod === "7 Days" ||
+                    selectedPeriod === "30 Days"
                       ? item.date.toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                         })
-                      : item.date.toLocaleDateString("en-IN", { month: "short" })}
+                      : item.date.toLocaleDateString("en-IN", {
+                          month: "short",
+                        })}
                   </span>
                 ))}
             </div>
@@ -1047,7 +1333,9 @@ function Dashboard() {
                 <h2>Spending by Category</h2>
                 <p>Where your money goes</p>
               </div>
-              <span className="category-month-label">{getMonthLabel(selectedMonth)}</span>
+              <span className="category-month-label">
+                {getMonthLabel(selectedMonth)}
+              </span>
             </div>
 
             <div className="category-chart">
@@ -1066,6 +1354,7 @@ function Dashboard() {
                         <i style={{ background: category.color }} />
                         <span title={category.name}>{category.name}</span>
                       </span>
+
                       <span className="category-amount">
                         <strong>{category.percentage}%</strong>
                         <small>{money(category.amount)}</small>
@@ -1078,6 +1367,76 @@ function Dashboard() {
                   </p>
                 )}
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* New features: recurring expenses and expense forecasting */}
+        <section className="dashboard-feature-grid">
+          <div className="dashboard-box feature-card">
+            <div className="dashboard-box-header">
+              <div>
+                <h2>
+                  <Repeat2 size={20} /> Recurring Expenses
+                </h2>
+                <p>Repeated payments detected in your history</p>
+              </div>
+            </div>
+
+            {recurringExpenses.length ? (
+              <div className="feature-list">
+                {recurringExpenses.map((item) => (
+                  <div className="feature-row" key={item.name}>
+                    <div className="feature-row-icon">
+                      <RefreshCw size={17} />
+                    </div>
+                    <div className="feature-row-info">
+                      <strong>{item.name}</strong>
+                      <small>
+                        Seen in {item.occurrences} different months
+                      </small>
+                    </div>
+                    <strong>{money(item.average)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="dashboard-empty-state compact">
+                <Repeat2 size={23} />
+                <strong>No recurring expenses detected yet</strong>
+                <span>
+                  Similar expense names in at least two different months
+                  will appear here.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-box feature-card">
+            <div className="dashboard-box-header">
+              <div>
+                <h2>
+                  <ChartNoAxesCombined size={20} /> Expense Forecast
+                </h2>
+                <p>Estimate based on the previous three complete months</p>
+              </div>
+            </div>
+
+            <div className="feature-forecast">
+              <span>Estimated monthly expenses</span>
+              <strong className="feature-forecast-value">
+                {money(expenseForecast.average)}
+              </strong>
+              <p>
+                {expenseForecast.monthsAvailable
+                  ? `Calculated from ${expenseForecast.monthsAvailable} month(s) with recorded expenses.`
+                  : "Add expenses from previous months to build your forecast."}
+              </p>
+            </div>
+
+            <div className="feature-forecast-footer">
+              <span>Selected month</span>
+              <strong>{getMonthLabel(selectedMonth)}</strong>
             </div>
           </div>
         </section>
@@ -1097,27 +1456,51 @@ function Dashboard() {
                   const category = getCategory(transaction);
                   const Icon = categoryIcon(category);
                   const income = isIncome(transaction);
-                  const amount = Math.abs(getTransactionAmount(transaction));
+                  const amount = Math.abs(
+                    getTransactionAmount(transaction)
+                  );
 
                   return (
                     <div
                       className="new-transaction-row"
-                      key={transaction._id || transaction.id || `${getTransactionName(transaction)}-${index}`}
+                      key={
+                        transaction._id ||
+                        transaction.id ||
+                        `${getTransactionName(transaction)}-${index}`
+                      }
                     >
-                      <div className={`transaction-new-icon ${income ? "income" : "expense"}`}>
+                      <div
+                        className={`transaction-new-icon ${
+                          income ? "income" : "expense"
+                        }`}
+                      >
                         <Icon size={18} />
                       </div>
+
                       <div className="transaction-new-info">
                         <strong>{getTransactionName(transaction)}</strong>
                         <span>{category}</span>
                       </div>
+
                       <span className="transaction-new-date">
                         {formatDate(getDate(transaction))}
                       </span>
-                      <strong className={income ? "transaction-income" : "transaction-expense"}>
-                        {income ? "+" : "−"}{money(amount)}
+
+                      <strong
+                        className={
+                          income
+                            ? "transaction-income"
+                            : "transaction-expense"
+                        }
+                      >
+                        {income ? "+" : "−"}
+                        {money(amount)}
                       </strong>
-                      <ArrowRight size={16} className="transaction-arrow" />
+
+                      <ArrowRight
+                        size={16}
+                        className="transaction-arrow"
+                      />
                     </div>
                   );
                 })
@@ -1125,7 +1508,9 @@ function Dashboard() {
                 <div className="dashboard-empty-state">
                   <CreditCard size={25} />
                   <strong>No transactions yet</strong>
-                  <span>Your recent transactions will appear here.</span>
+                  <span>
+                    Your recent transactions will appear here.
+                  </span>
                   <Link to="/transactions">Add a transaction</Link>
                 </div>
               )}
@@ -1142,8 +1527,17 @@ function Dashboard() {
 
             <div className="health-content">
               <div className="health-circle">
-                <svg viewBox="0 0 120 120" role="img" aria-label={`Financial health ${financialScore} out of 100`}>
-                  <circle cx="60" cy="60" r="48" className="health-bg" />
+                <svg
+                  viewBox="0 0 120 120"
+                  role="img"
+                  aria-label={`Financial health ${financialScore} out of 100`}
+                >
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="48"
+                    className="health-bg"
+                  />
                   <circle
                     cx="60"
                     cy="60"
@@ -1155,6 +1549,7 @@ function Dashboard() {
                     transform="rotate(-90 60 60)"
                   />
                 </svg>
+
                 <div className="health-number">
                   <strong>{financialScore}</strong>
                   <span>/100</span>
@@ -1174,18 +1569,24 @@ function Dashboard() {
 
                 <HealthPoint
                   good={currentIncome > currentExpenses && currentIncome > 0}
-                  text={currentIncome > currentExpenses && currentIncome > 0
-                    ? "Income is above expenses"
-                    : "Track income and expenses"}
+                  text={
+                    currentIncome > currentExpenses && currentIncome > 0
+                      ? "Income is above expenses"
+                      : "Track income and expenses"
+                  }
                 />
+
                 <HealthPoint
                   good={budgetUsage !== null && budgetUsage < 80}
-                  text={budgetUsage === null
-                    ? "Add a monthly budget"
-                    : budgetUsage >= 80
-                      ? "Budget usage is high"
-                      : "Spending within budget"}
+                  text={
+                    budgetUsage === null
+                      ? "Add a monthly budget"
+                      : budgetUsage >= 80
+                        ? "Budget usage is high"
+                        : "Spending within budget"
+                  }
                 />
+
                 <HealthPoint
                   good={savingsRate >= 20}
                   text={`Savings rate: ${Math.round(savingsRate)}%`}
@@ -1214,7 +1615,11 @@ function Dashboard() {
                   return (
                     <div
                       className="dashboard-goal-row"
-                      key={goal._id || goal.id || `${goal.title}-${index}`}
+                      key={
+                        goal._id ||
+                        goal.id ||
+                        `${goal.title}-${index}`
+                      }
                     >
                       <div className="dashboard-goal-main">
                         <div className="dashboard-goal-title">
@@ -1232,7 +1637,10 @@ function Dashboard() {
                           <span
                             className="goal-moving-icon"
                             style={{
-                              left: `${Math.min(96, Math.max(4, goal.percentage))}%`,
+                              left: `${Math.min(
+                                96,
+                                Math.max(4, goal.percentage)
+                              )}%`,
                               color: goal.color,
                             }}
                           >
@@ -1261,7 +1669,9 @@ function Dashboard() {
 
           <div className="dashboard-box insights-box">
             <div className="dashboard-box-header">
-              <h2><Lightbulb size={20} /> Money Insights</h2>
+              <h2>
+                <Lightbulb size={20} /> Money Insights
+              </h2>
               <Link to="/analytics" className="dashboard-view-all">
                 View all <ArrowRight size={16} />
               </Link>
@@ -1269,32 +1679,52 @@ function Dashboard() {
 
             <div className="insight-cards">
               <div className="insight-card">
-                <span className="insight-icon red"><ArrowUpRight size={19} /></span>
+                <span className="insight-icon red">
+                  <ArrowUpRight size={19} />
+                </span>
                 <p>
                   {categoryData[0]
                     ? `${categoryData[0].name} is your highest spending category at ${money(categoryData[0].amount)}.`
                     : "Add expenses to see your top spending category."}
                 </p>
               </div>
+
               <div className="insight-card">
-                <span className="insight-icon green"><ArrowDownRight size={19} /></span>
+                <span className="insight-icon green">
+                  <ArrowDownRight size={19} />
+                </span>
                 <p>
                   {previousExpenses > 0
-                    ? `Expenses ${expenseChange <= 0 ? "decreased" : "increased"} by ${Math.abs(Math.round(expenseChange))}% compared with last month.`
+                    ? `Expenses ${
+                        expenseChange <= 0 ? "decreased" : "increased"
+                      } by ${Math.abs(
+                        Math.round(expenseChange)
+                      )}% compared with last month.`
                     : "Your month-over-month spending trend will appear here."}
                 </p>
               </div>
+
               <div className="insight-card">
-                <span className="insight-icon blue"><Info size={19} /></span>
-                <p>{money(safeToSpend)} available based on your loaded income and budget data.</p>
+                <span className="insight-icon blue">
+                  <Info size={19} />
+                </span>
+                <p>
+                  {money(safeToSpend)} available after considering your
+                  current expenses and savings target.
+                </p>
               </div>
             </div>
           </div>
 
           <div className="dashboard-box before-buy">
-            <div className="buy-icon"><ShoppingCart size={20} /></div>
+            <div className="buy-icon">
+              <ShoppingCart size={20} />
+            </div>
             <h2>Before You Buy</h2>
-            <p>Thinking about a purchase? See how it could affect your goals and budget.</p>
+            <p>
+              Thinking about a purchase? See how it could affect your
+              goals and budget.
+            </p>
             <Link to="/simulator" className="before-buy-button">
               Simulate Purchase <ArrowRight size={16} />
             </Link>
@@ -1311,7 +1741,15 @@ function Dashboard() {
   );
 }
 
-function StatCard({ type, icon, title, value, change, positive, customText }) {
+function StatCard({
+  type,
+  icon,
+  title,
+  value,
+  change,
+  positive,
+  customText,
+}) {
   return (
     <div className={`new-stat-card ${type}`}>
       <div className="stat-card-icon">{icon}</div>
