@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
 
+import { useEffect, useMemo, useState } from "react";
 import {
   Home,
   CreditCard,
@@ -19,305 +19,155 @@ import {
   Heart,
   Leaf,
   MoreHorizontal,
-  SlidersHorizontal,
-  Sparkles,
-  BarChart4,
   Bell,
   Lightbulb,
-  CheckCircle2,
-  AlertCircle,
   ArrowRight,
   X,
   Pencil,
   Trash2,
   Save,
-  BellRing,
+  AlertCircle,
+  Sparkles,
 } from "lucide-react";
-
 import { Link, useNavigate } from "react-router-dom";
-import API_BASE_URL from "../api";
 import "./Budget.css";
 
-
-const categoryOptions = [
-  {
-    name: "Food & Dining",
-    backendName: "Food",
-    iconKey: "food",
-    color: "pink",
-  },
-  {
-    name: "Shopping",
-    backendName: "Shopping",
-    iconKey: "shopping",
-    color: "orange",
-  },
-  {
-    name: "Transport",
-    backendName: "Transport",
-    iconKey: "transport",
-    color: "blue",
-  },
-  {
-    name: "Bills & Utilities",
-    backendName: "Bills",
-    iconKey: "bills",
-    color: "purple",
-  },
-  {
-    name: "Entertainment",
-    backendName: "Entertainment",
-    iconKey: "entertainment",
-    color: "violet",
-  },
-  {
-    name: "Health & Fitness",
-    backendName: "Health",
-    iconKey: "health",
-    color: "red",
-  },
-  {
-    name: "Personal Care",
-    backendName: "Personal Care",
-    iconKey: "personal",
-    color: "green",
-  },
-  {
-    name: "Others",
-    backendName: "Others",
-    iconKey: "others",
-    color: "gray",
-  },
+const categories = [
+  { name: "Food & Dining", icon: Utensils, color: "pink" },
+  { name: "Shopping", icon: ShoppingBag, color: "orange" },
+  { name: "Transport", icon: Car, color: "blue" },
+  { name: "Bills & Utilities", icon: FileText, color: "purple" },
+  { name: "Entertainment", icon: Gamepad2, color: "violet" },
+  { name: "Health & Fitness", icon: Heart, color: "red" },
+  { name: "Personal Care", icon: Leaf, color: "green" },
+  { name: "Others", icon: MoreHorizontal, color: "gray" },
 ];
 
-
-const iconMap = {
-  food: Utensils,
-  shopping: ShoppingBag,
-  transport: Car,
-  bills: FileText,
-  entertainment: Gamepad2,
-  health: Heart,
-  personal: Leaf,
-  others: MoreHorizontal,
-};
-
-
-const monthOptions = [
-  "September 2026",
-  "October 2026",
-  "November 2026",
-  "December 2026",
+const defaultBudgets = [
+  { id: 1, name: "Food & Dining", budget: 6000, spent: 0 },
+  { id: 2, name: "Shopping", budget: 5000, spent: 0 },
+  { id: 3, name: "Transport", budget: 3000, spent: 0 },
+  { id: 4, name: "Bills & Utilities", budget: 5000, spent: 0 },
+  { id: 5, name: "Entertainment", budget: 3000, spent: 0 },
+  { id: 6, name: "Health & Fitness", budget: 2000, spent: 0 },
+  { id: 7, name: "Personal Care", budget: 2000, spent: 0 },
+  { id: 8, name: "Others", budget: 1000, spent: 0 },
 ];
 
-
-const getMonthKey = (month) => {
-  const date = new Date(`${month} 01`);
-
-  if (Number.isNaN(date.getTime())) {
-    return month;
+const readJSON = (key, fallback) => {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
   }
-
-  const year = date.getFullYear();
-  const monthNumber = String(
-    date.getMonth() + 1
-  ).padStart(2, "0");
-
-  return `${year}-${monthNumber}`;
 };
 
-const getCategoryByBackendName = (backendName) => {
-  return categoryOptions.find(
-    (category) =>
-      category.backendName === backendName
+const getUser = () =>
+  readJSON("user", null) ||
+  readJSON("expenseflow-user", null) ||
+  {};
+
+const getMonthKey = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const getTransactionDate = (transaction) => {
+  const raw =
+    transaction.date ||
+    transaction.createdAt ||
+    transaction.transactionDate;
+
+  if (!raw) return null;
+
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getAmount = (transaction) =>
+  Math.abs(Number(transaction.amount ?? transaction.value ?? 0));
+
+const isExpense = (transaction) => {
+  const type = String(transaction.type || "").toLowerCase();
+
+  return (
+    ["expense", "debit"].includes(type) ||
+    transaction.isExpense === true
   );
 };
 
+const normalizeCategory = (value = "") =>
+  String(value).toLowerCase().replace(/[^a-z]/g, "");
+
+const categoryMatches = (transaction, categoryName) => {
+  const transactionCategory = normalizeCategory(transaction.category);
+  const category = normalizeCategory(categoryName);
+
+  if (!transactionCategory) return category === "others";
+
+  const aliases = {
+    fooddining: ["food", "dining", "restaurant", "groceries"],
+    shopping: ["shop", "clothing"],
+    transport: ["travel", "fuel", "cab", "uber"],
+    billsutilities: ["bill", "utility", "electricity", "rent"],
+    entertainment: ["movie", "game"],
+    healthfitness: ["health", "fitness", "medical", "hospital"],
+    personalcare: ["personal", "salon"],
+    others: ["other", "miscellaneous"],
+  };
+
+  return (
+    transactionCategory === category ||
+    (aliases[category] || []).some((alias) =>
+      transactionCategory.includes(alias)
+    )
+  );
+};
 
 function Budget() {
   const navigate = useNavigate();
 
+  const [user, setUser] = useState(getUser);
 
-  const [budgets, setBudgets] = useState([]);
+  const [budgets, setBudgets] = useState(() =>
+    readJSON("expenseflow-budgets", defaultBudgets)
+  );
 
-  const [transactions, setTransactions] =
-    useState([]);
+  const [transactions, setTransactions] = useState(() =>
+    readJSON("transactions", [])
+  );
 
-  const [loading, setLoading] =
-    useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    getMonthKey(new Date())
+  );
 
-  const [saving, setSaving] =
-    useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  const [deletingId, setDeletingId] =
-    useState(null);
-
-  const [selectedMonth, setSelectedMonth] =
-    useState("September 2026");
-
-  const [viewMonth, setViewMonth] =
-    useState("This Month");
-
-  const [modalOpen, setModalOpen] =
-    useState(false);
-
-  const [editingBudget, setEditingBudget] =
-    useState(null);
-
-  const [menuOpen, setMenuOpen] =
-    useState(null);
-
-  const [showNotifications, setShowNotifications] =
-    useState(false);
-
-  const [budgetAlerts, setBudgetAlerts] =
-    useState(() => {
-      return (
-        localStorage.getItem(
-          "expenseflow-budget-alerts"
-        ) === "true"
-      );
-    });
+  const [budgetAlerts, setBudgetAlerts] = useState(
+    () => localStorage.getItem("expenseflow-budget-alerts") !== "false"
+  );
 
   const [formData, setFormData] = useState({
     name: "Food & Dining",
     budget: "",
+    spent: "0",
   });
 
- 
-
-  const getToken = () => {
-    return localStorage.getItem("token");
-  };
-
-
-  const handleUnauthorized = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-
-    navigate("/login", {
-      replace: true,
-    });
-  };
-
-
-  const currentMonthKey =
-    getMonthKey(selectedMonth);
-
-
-  const fetchBudgets = async () => {
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/budgets?month=${encodeURIComponent(
-          currentMonthKey
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-
-      if (!response.ok) {
-        alert(
-          data.message ||
-            "Unable to fetch budgets."
-        );
-        return;
-      }
-
-      setBudgets(data.budgets || []);
-    } catch (error) {
-      console.error(
-        "Fetch Budgets Error:",
-        error
-      );
-
-      alert(
-        "Unable to connect to server. Please make sure the backend is running."
-      );
-    }
-  };
-
-
-  const fetchTransactions = async () => {
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/transactions`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-
-      if (!response.ok) {
-        alert(
-          data.message ||
-            "Unable to fetch transactions."
-        );
-        return;
-      }
-
-      setTransactions(
-        data.transactions || []
-      );
-    } catch (error) {
-      console.error(
-        "Fetch Transactions Error:",
-        error
-      );
-
-      alert(
-        "Unable to connect to server."
-      );
-    }
-  };
+  const [monthlyIncome, setMonthlyIncome] = useState(() => {
+    const currentUser = getUser();
+    return Number(
+      currentUser.monthlyIncome ||
+      currentUser.income ||
+      currentUser.monthlySalary ||
+      0
+    );
+  });
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-
-      await Promise.all([
-        fetchBudgets(),
-        fetchTransactions(),
-      ]);
-
-      setLoading(false);
-    };
-
-    loadData();
-  }, [selectedMonth]);
+    localStorage.setItem("expenseflow-budgets", JSON.stringify(budgets));
+  }, [budgets]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -326,226 +176,269 @@ function Budget() {
     );
   }, [budgetAlerts]);
 
+  useEffect(() => {
+    const refreshData = () => {
+      const currentUser = getUser();
 
-  const monthlyIncome = useMemo(() => {
-    const user =
-      JSON.parse(
-        localStorage.getItem("user") ||
-          "null"
+      setUser(currentUser);
+      setMonthlyIncome(
+        Number(
+          currentUser.monthlyIncome ||
+          currentUser.income ||
+          currentUser.monthlySalary ||
+          0
+        )
       );
+      setTransactions(readJSON("transactions", []));
+    };
 
-    return Number(
-      user?.monthlyIncome || 60000
-    );
+    window.addEventListener("focus", refreshData);
+    window.addEventListener("storage", refreshData);
+
+    return () => {
+      window.removeEventListener("focus", refreshData);
+      window.removeEventListener("storage", refreshData);
+    };
   }, []);
 
+  const monthOptions = useMemo(() => {
+    const now = new Date();
 
-  const getSpentForCategory = (
-    backendCategory
-  ) => {
-    return transactions
-      .filter((transaction) => {
-        if (
-          transaction.type !==
-          "expense"
-        ) {
-          return false;
-        }
-
-        const transactionDate =
-          new Date(transaction.date);
-
-        if (
-          Number.isNaN(
-            transactionDate.getTime()
-          )
-        ) {
-          return false;
-        }
-
-        const transactionYear =
-          transactionDate.getFullYear();
-
-        const transactionMonth =
-          String(
-            transactionDate.getMonth() + 1
-          ).padStart(2, "0");
-
-        const transactionMonthKey = `${transactionYear}-${transactionMonth}`;
-
-        if (
-          transactionMonthKey !==
-          currentMonthKey
-        ) {
-          return false;
-        }
-
-        return (
-          transaction.category ===
-          backendCategory
-        );
-      })
-      .reduce(
-        (total, transaction) =>
-          total +
-          Number(
-            transaction.amount || 0
-          ),
-        0
+    return Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(
+        now.getFullYear(),
+        now.getMonth() - 5 + index,
+        1
       );
-  };
-
-
-  const displayBudgets = useMemo(() => {
-    return budgets.map((budget) => {
-      const category =
-        getCategoryByBackendName(
-          budget.category
-        );
-
-      const spent =
-        getSpentForCategory(
-          budget.category
-        );
 
       return {
-        ...budget,
-
-        id: budget._id,
-
-        name:
-          category?.name ||
-          budget.category,
-
-        spent,
-
-        budget: Number(
-          budget.amount || 0
-        ),
-
-        iconKey:
-          category?.iconKey ||
-          "others",
-
-        color:
-          category?.color ||
-          "gray",
+        value: getMonthKey(date),
+        label: date.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        }),
       };
     });
-  }, [
-    budgets,
-    transactions,
-    currentMonthKey,
-  ]);
+  }, []);
 
+  const selectedDate = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    return new Date(year, month - 1, 1);
+  }, [selectedMonth]);
 
-  const totalBudgeted = useMemo(() => {
-    return displayBudgets.reduce(
-      (total, item) =>
-        total +
-        Number(item.budget || 0),
-      0
-    );
-  }, [displayBudgets]);
+  const monthTransactions = useMemo(
+    () =>
+      transactions.filter((transaction) => {
+        const date = getTransactionDate(transaction);
+        return date && getMonthKey(date) === selectedMonth;
+      }),
+    [transactions, selectedMonth]
+  );
 
-  const totalSpent = useMemo(() => {
-    return displayBudgets.reduce(
-      (total, item) =>
-        total +
-        Number(item.spent || 0),
-      0
-    );
-  }, [displayBudgets]);
+  const expenseTransactions = useMemo(
+    () => monthTransactions.filter(isExpense),
+    [monthTransactions]
+  );
 
-  const remaining =
-    totalBudgeted - totalSpent;
+  const getSpentForCategory = (name) => {
+    if (expenseTransactions.length === 0) {
+      return Number(
+        budgets.find((item) => item.name === name)?.spent || 0
+      );
+    }
 
-  const budgetPercentage =
-    monthlyIncome > 0
-      ? Math.round(
-          (totalBudgeted /
-            monthlyIncome) *
-            100
-        )
-      : 0;
+    return expenseTransactions
+      .filter((transaction) => categoryMatches(transaction, name))
+      .reduce((total, transaction) => total + getAmount(transaction), 0);
+  };
 
-  const remainingPercentage =
-    monthlyIncome > 0
-      ? Math.round(
-          (Math.max(
-            remaining,
-            0
-          ) /
-            monthlyIncome) *
-            100
-        )
-      : 0;
+  const displayBudgets = useMemo(
+    () =>
+      budgets.map((budget) => ({
+        ...budget,
+        spent:
+          expenseTransactions.length > 0
+            ? expenseTransactions
+                .filter((transaction) =>
+                  categoryMatches(transaction, budget.name)
+                )
+                .reduce(
+                  (total, transaction) => total + getAmount(transaction),
+                  0
+                )
+            : Number(budget.spent || 0),
+      })),
+    [budgets, expenseTransactions]
+  );
 
-  const warningBudgets =
-    displayBudgets.filter(
-      (item) => {
-        if (!item.budget) {
-          return false;
-        }
+  const totalBudgeted = displayBudgets.reduce(
+    (total, item) => total + Number(item.budget || 0),
+    0
+  );
 
-        return (
-          Number(item.spent) /
-            Number(item.budget) >=
-          0.8
-        );
-      }
-    );
+  const totalSpent = expenseTransactions.length
+    ? expenseTransactions.reduce(
+        (total, transaction) => total + getAmount(transaction),
+        0
+      )
+    : displayBudgets.reduce(
+        (total, item) => total + Number(item.spent || 0),
+        0
+      );
 
+  const remaining = totalBudgeted - totalSpent;
 
-  const openCreateModal = () => {
-    setEditingBudget(null);
+  const incomeBudgetPercentage = monthlyIncome > 0
+    ? Math.round((totalBudgeted / monthlyIncome) * 100)
+    : 0;
 
-    setFormData({
-      name: "Food & Dining",
-      budget: "",
+  const remainingIncomePercentage = monthlyIncome > 0
+    ? Math.round(
+        (Math.max(monthlyIncome - totalSpent, 0) / monthlyIncome) * 100
+      )
+    : 0;
+
+  const categorySpending = displayBudgets
+    .filter((item) => item.spent > 0)
+    .map((item) => {
+      const category = categories.find(
+        (entry) => entry.name === item.name
+      );
+
+      return {
+        ...item,
+        color: category?.color || "gray",
+        amount: Number(item.spent),
+      };
     });
 
-    setMenuOpen(null);
+  const categoryTotal = categorySpending.reduce(
+    (total, item) => total + item.amount,
+    0
+  );
+
+  const colors = {
+    pink: "#ff3151",
+    orange: "#ff9f43",
+    blue: "#3b82f6",
+    purple: "#a78bfa",
+    violet: "#8b5cf6",
+    red: "#ef4444",
+    green: "#22c55e",
+    gray: "#64748b",
+  };
+
+  let chartPosition = 0;
+
+  const donutBackground = categoryTotal
+    ? `conic-gradient(${categorySpending
+        .map((item) => {
+          const start = chartPosition;
+          chartPosition += (item.amount / categoryTotal) * 100;
+
+          return `${colors[item.color]} ${start}% ${chartPosition}%`;
+        })
+        .join(", ")})`
+    : "conic-gradient(#1b252b 0% 100%)";
+
+  const monthlyTrend = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, index) => {
+        const date = new Date(
+          selectedDate.getFullYear(),
+          selectedDate.getMonth() - 5 + index,
+          1
+        );
+
+        const monthKey = getMonthKey(date);
+
+        const spent = transactions
+          .filter((transaction) => {
+            const transactionDate = getTransactionDate(transaction);
+
+            return (
+              isExpense(transaction) &&
+              transactionDate &&
+              getMonthKey(transactionDate) === monthKey
+            );
+          })
+          .reduce((sum, transaction) => sum + getAmount(transaction), 0);
+
+        return {
+          month: date.toLocaleDateString("en-US", {
+            month: "short",
+          }),
+          spent,
+        };
+      }),
+    [transactions, selectedDate]
+  );
+
+  const maxTrendValue = Math.max(
+    ...monthlyTrend.map((item) => item.spent),
+    1
+  );
+
+  const warningBudgets = displayBudgets.filter(
+    (item) =>
+      Number(item.budget) > 0 &&
+      item.spent / item.budget >= 0.8
+  );
+
+  const notifications = [
+    ...warningBudgets.map((item) => ({
+      id: item.id,
+      title: `${item.name} budget alert`,
+      message: `${Math.round((item.spent / item.budget) * 100)}% of this budget has been used.`,
+    })),
+    ...(remaining < 0
+      ? [{
+          id: "overall",
+          title: "Budget exceeded",
+          message: `You are ₹${Math.abs(remaining).toLocaleString("en-IN")} over your total budget.`,
+        }]
+      : []),
+  ];
+
+  const insightMessage =
+    totalSpent === 0
+      ? "Add expenses to see spending insights for this month."
+      : remaining < 0
+        ? `You have exceeded your total budget by ₹${Math.abs(remaining).toLocaleString("en-IN")}. Review your category spending.`
+        : `You have ₹${remaining.toLocaleString("en-IN")} left in your budgets. Keep tracking your expenses to stay on target.`;
+
+  const openCreateModal = () => {
+    setEditingId(null);
+    setFormData({
+      name:
+        categories.find(
+          (category) =>
+            !budgets.some((budget) => budget.name === category.name)
+        )?.name || "Food & Dining",
+      budget: "",
+      spent: "0",
+    });
     setModalOpen(true);
   };
 
-
   const openEditModal = (item) => {
-    setEditingBudget(item);
-
-    const category =
-      getCategoryByBackendName(
-        item.category
-      );
-
+    setEditingId(item.id);
     setFormData({
-      name:
-        category?.name ||
-        item.name,
-      budget: String(
-        item.budget
-      ),
+      name: item.name,
+      budget: String(item.budget),
+      spent: String(item.spent),
     });
-
     setMenuOpen(null);
     setModalOpen(true);
   };
 
   const closeModal = () => {
-    if (saving) {
-      return;
-    }
-
     setModalOpen(false);
-    setEditingBudget(null);
+    setEditingId(null);
   };
 
-
   const handleFormChange = (event) => {
-    const {
-      name,
-      value,
-    } = event.target;
+    const { name, value } = event.target;
 
     setFormData((previous) => ({
       ...previous,
@@ -553,1664 +446,751 @@ function Budget() {
     }));
   };
 
-
-  const handleSaveBudget = async (
-    event
-  ) => {
+  const handleSaveBudget = (event) => {
     event.preventDefault();
 
-    const budgetAmount =
-      Number(formData.budget);
+    const amount = Number(formData.budget);
+    const spent = Number(formData.spent);
 
-    if (
-      !formData.name ||
-      !Number.isFinite(
-        budgetAmount
-      ) ||
-      budgetAmount <= 0
-    ) {
-      alert(
-        "Please enter a valid budget amount."
-      );
-
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Enter a valid budget amount.");
       return;
     }
 
-    const selectedCategory =
-      categoryOptions.find(
-        (category) =>
-          category.name ===
-          formData.name
-      );
-
-    if (!selectedCategory) {
-      alert(
-        "Please select a valid category."
-      );
-
+    if (!Number.isFinite(spent) || spent < 0) {
+      alert("Enter a valid spending amount.");
       return;
     }
 
-    const alreadyExists =
-      budgets.some(
-        (item) =>
-          item.category ===
-            selectedCategory.backendName &&
-          item._id !==
-            editingBudget?._id
-      );
+    const duplicate = budgets.some(
+      (item) =>
+        item.name === formData.name &&
+        item.id !== editingId
+    );
 
-    if (alreadyExists) {
-      alert(
-        "This category already has a budget for this month."
-      );
-
+    if (duplicate) {
+      alert("This category already has a budget.");
       return;
     }
 
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      setSaving(true);
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/budgets`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-
-          body: JSON.stringify({
-            category:
-              selectedCategory.backendName,
-
-            amount: budgetAmount,
-
-            month:
-              currentMonthKey,
-          }),
-        }
-      );
-
-      const data =
-        await response.json();
-
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-
-      if (!response.ok) {
-        alert(
-          data.message ||
-            "Unable to save budget."
-        );
-
-        return;
-      }
-      setBudgets((previous) => {
-        const exists =
-          previous.some(
-            (item) =>
-              item._id ===
-              data.budget._id
-          );
-
-        if (exists) {
-          return previous.map(
-            (item) =>
-              item._id ===
-              data.budget._id
-                ? data.budget
-                : item
-          );
-        }
-
-        return [
-          ...previous,
-          data.budget,
-        ];
-      });
-
-      closeModal();
-    } catch (error) {
-      console.error(
-        "Save Budget Error:",
-        error
-      );
-
-      alert(
-        "Unable to connect to server."
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-
-  const deleteBudget = async (id) => {
-    const selectedBudget =
-      displayBudgets.find(
-        (item) => item.id === id
-      );
-
-    if (!selectedBudget) {
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        `Delete "${selectedBudget.name}" budget?`
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      setDeletingId(id);
-      const response = await fetch(
-        `${API_BASE_URL}/api/budgets/${id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      
-      );
-
-      const data =
-        await response.json();
-
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-
-      if (!response.ok) {
-        alert(
-          data.message ||
-            "Unable to delete budget."
-        );
-
-        return;
-      }
-
+    if (editingId !== null) {
       setBudgets((previous) =>
-        previous.filter(
-          (item) =>
-            item._id !== id
+        previous.map((item) =>
+          item.id === editingId
+            ? {
+                ...item,
+                name: formData.name,
+                budget: amount,
+                spent,
+              }
+            : item
         )
       );
-
-      setMenuOpen(null);
-    } catch (error) {
-      console.error(
-        "Delete Budget Error:",
-        error
-      );
-
-      alert(
-        "Unable to connect to server."
-      );
-    } finally {
-      setDeletingId(null);
+    } else {
+      setBudgets((previous) => [
+        ...previous,
+        {
+          id: Date.now(),
+          name: formData.name,
+          budget: amount,
+          spent,
+        },
+      ]);
     }
+
+    closeModal();
   };
 
+  const deleteBudget = (id) => {
+    const item = budgets.find((budget) => budget.id === id);
+    if (!item) return;
 
-  const autoAllocateBudget = async () => {
-    const available =
-      monthlyIncome -
-      totalBudgeted;
+    if (!window.confirm(`Delete ${item.name} budget?`)) return;
+
+    setBudgets((previous) =>
+      previous.filter((budget) => budget.id !== id)
+    );
+    setMenuOpen(null);
+  };
+
+  const autoAllocateBudget = () => {
+    if (monthlyIncome <= 0) {
+      alert("Add your monthly income in your profile first.");
+      navigate("/profile");
+      return;
+    }
+
+    const available = monthlyIncome - totalBudgeted;
 
     if (available <= 0) {
-      alert(
-        "There is no unallocated income left."
-      );
-
+      alert("No unallocated income is available.");
       return;
     }
 
-    const othersBudget =
-      displayBudgets.find(
-        (item) =>
-          item.name === "Others"
+    const existing = budgets.find((item) => item.name === "Others");
+
+    if (existing) {
+      setBudgets((previous) =>
+        previous.map((item) =>
+          item.id === existing.id
+            ? { ...item, budget: Number(item.budget) + available }
+            : item
+        )
       );
-
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      if (othersBudget) {
-        const response = await fetch(
-          `${API_BASE_URL}/api/budgets`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-
-              body: JSON.stringify({
-                category: "Others",
-
-                amount:
-                  Number(
-                    othersBudget.budget
-                  ) +
-                  available,
-
-                month:
-                  currentMonthKey,
-              }),
-            }
-          );
-
-        const data =
-          await response.json();
-
-        if (
-          response.status === 401
-        ) {
-          handleUnauthorized();
-          return;
-        }
-
-        if (!response.ok) {
-          alert(
-            data.message ||
-              "Unable to allocate budget."
-          );
-
-          return;
-        }
-
-        setBudgets((previous) =>
-          previous.map(
-            (item) =>
-              item._id ===
-              data.budget._id
-                ? data.budget
-                : item
-          )
-        );
-      } else {
-        const response = await fetch(
-          `${API_BASE_URL}/api/budgets`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-
-              body: JSON.stringify({
-                category: "Others",
-
-                amount:
-                  available,
-
-                month:
-                  currentMonthKey,
-              }),
-            }
-          );
-
-        const data =
-          await response.json();
-
-        if (
-          response.status === 401
-        ) {
-          handleUnauthorized();
-          return;
-        }
-
-        if (!response.ok) {
-          alert(
-            data.message ||
-              "Unable to allocate budget."
-          );
-
-          return;
-        }
-
-        setBudgets((previous) => [
-          ...previous,
-          data.budget,
-        ]);
-      }
-
-      alert(
-        `₹${available.toLocaleString(
-          "en-IN"
-        )} was automatically allocated.`
-      );
-    } catch (error) {
-      console.error(
-        "Auto Allocate Error:",
-        error
-      );
-
-      alert(
-        "Unable to connect to server."
-      );
+    } else {
+      setBudgets((previous) => [
+        ...previous,
+        {
+          id: Date.now(),
+          name: "Others",
+          budget: available,
+          spent: 0,
+        },
+      ]);
     }
   };
 
-
-  const resetBudgets = async () => {
-    const confirmed =
-      window.confirm(
-        "Delete all budgets for this month?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      const token = getToken();
-
-      if (!token) {
-        handleUnauthorized();
-        return;
-      }
-
-      for (const budget of budgets) {
-        await fetch(
-          `${API_BASE_URL}/api/budgets/${budget._id}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-      }
-
-      setBudgets([]);
-      setMenuOpen(null);
-    } catch (error) {
-      console.error(
-        "Reset Budgets Error:",
-        error
-      );
-
-      alert(
-        "Unable to reset budgets."
-      );
-    }
+  const resetBudgets = () => {
+    if (!window.confirm("Reset all budgets to default values?")) return;
+    setBudgets(defaultBudgets);
   };
 
+  const userName =
+    user.name || user.username || user.fullName || "User";
 
+  const initials = userName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("");
 
   return (
     <div className="budget-page">
-
-
       <aside className="budget-sidebar">
-
-        <Link
-          to="/"
-          className="budget-logo"
-        >
-          <div className="budget-logo-box">
-            E
-          </div>
-
-          <span>
-            Expense<span>Flow</span>
-          </span>
+        <Link to="/dashboard" className="budget-logo">
+          <div className="budget-logo-box">E</div>
+          <span>Expense<span>Flow</span></span>
         </Link>
 
         <nav className="budget-navigation">
-
-          <Link
-            to="/dashboard"
-            className="budget-nav-item"
-          >
-            <Home size={20} />
-            <span>
-              Dashboard
-            </span>
+          <Link to="/dashboard" className="budget-nav-item">
+            <Home size={20} /> <span>Dashboard</span>
           </Link>
-
-          <Link
-            to="/transactions"
-            className="budget-nav-item"
-          >
-            <CreditCard size={20} />
-            <span>
-              Transactions
-            </span>
+          <Link to="/transactions" className="budget-nav-item">
+            <CreditCard size={20} /> <span>Transactions</span>
           </Link>
-
-          <Link
-            to="/analytics"
-            className="budget-nav-item"
-          >
-            <BarChart3 size={20} />
-            <span>
-              Analytics
-            </span>
+          <Link to="/analytics" className="budget-nav-item">
+            <BarChart3 size={20} /> <span>Analytics</span>
           </Link>
-
-          <Link
-            to="/budgets"
-            className="budget-nav-item active"
-          >
-            <Wallet size={20} />
-            <span>
-              Budgets
-            </span>
+          <Link to="/budgets" className="budget-nav-item active">
+            <Wallet size={20} /> <span>Budgets</span>
           </Link>
-
-          <Link
-            to="/goals"
-            className="budget-nav-item"
-          >
-            <Target size={20} />
-            <span>
-              Goals
-            </span>
+          <Link to="/goals" className="budget-nav-item">
+            <Target size={20} /> <span>Goals</span>
           </Link>
-
-          <Link
-            to="/simulator"
-            className="budget-nav-item"
-          >
-            <ShoppingCart size={20} />
-            <span>
-              Before You Buy
-            </span>
+          <Link to="/simulator" className="budget-nav-item">
+            <ShoppingCart size={20} /> <span>Before You Buy</span>
           </Link>
-
-          <Link
-            to="/profile"
-            className="budget-nav-item"
-          >
-            <User size={20} />
-            <span>
-              Profile
-            </span>
+          <Link to="/profile" className="budget-nav-item">
+            <User size={20} /> <span>Profile</span>
           </Link>
-
         </nav>
 
-        {/* SMART TIP */}
-
         <div className="budget-smart-tip">
-
           <div className="budget-tip-icon">
             <Lightbulb size={25} />
           </div>
-
-          <h3>
-            Smart Tip
-          </h3>
-
-          <p>
-            A clear budget today
-            means a stress-free
-            tomorrow!
-          </p>
-
+          <h3>Smart Tip</h3>
+          <p>A clear budget today means a stress-free tomorrow!</p>
         </div>
-
       </aside>
 
       <main className="budget-main">
-
-        {/* TOP BAR */}
-
         <header className="budget-topbar">
-
-          <div></div>
-
+          <div />
           <div className="budget-top-actions">
-
-            {/* MONTH */}
-
             <div className="budget-dropdown-wrapper">
-
               <CalendarDays size={17} />
-
               <select
                 className="budget-month-select"
                 value={selectedMonth}
-                onChange={(event) =>
-                  setSelectedMonth(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                aria-label="Select month"
               >
-                {monthOptions.map(
-                  (month) => (
-                    <option
-                      key={month}
-                      value={month}
-                    >
-                      {month}
-                    </option>
-                  )
-                )}
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
               </select>
-
               <ChevronDown size={15} />
-
             </div>
-
-            {/* NOTIFICATION */}
 
             <div className="budget-notification-wrapper">
-
               <button
-                className="budget-notification"
                 type="button"
+                className="budget-notification"
                 onClick={() =>
-                  setShowNotifications(
-                    (previous) =>
-                      !previous
-                  )
+                  setNotificationsOpen((previous) => !previous)
                 }
+                aria-label="Notifications"
               >
-
                 <Bell size={20} />
-
-                {warningBudgets.length >
-                  0 && (
-                  <span></span>
-                )}
-
+                {notifications.length > 0 && <span />}
               </button>
 
-              {showNotifications && (
+              {notificationsOpen && (
                 <div className="budget-notification-dropdown">
-
-                  <strong>
-                    Budget Alerts
-                  </strong>
-
-                  {warningBudgets.length >
-                  0 ? (
-                    <p>
-                      {
-                        warningBudgets.length
-                      }{" "}
-                      {warningBudgets.length ===
-                      1
-                        ? "category is"
-                        : "categories are"}{" "}
-                      close to the
-                      budget limit.
-                    </p>
+                  <strong>Budget Alerts</strong>
+                  {notifications.length ? (
+                    notifications.map((notification) => (
+                      <div
+                        key={notification.id}
+                        className="budget-alert-item"
+                      >
+                        <b>{notification.title}</b>
+                        <p>{notification.message}</p>
+                      </div>
+                    ))
                   ) : (
-                    <p>
-                      All categories are
-                      currently under
-                      control.
-                    </p>
+                    <p>No budget alerts right now.</p>
                   )}
-
                 </div>
               )}
-
             </div>
 
-            {/* AVATAR */}
-
-            <div className="budget-avatar">
-              V
-            </div>
-
+            <button
+              type="button"
+              className="budget-avatar"
+              title={userName}
+              onClick={() => navigate("/profile")}
+            >
+              {initials || "U"}
+            </button>
           </div>
-
         </header>
 
-        {/* HEADING */}
-
         <section className="budget-heading">
-
           <div>
-
-            <h1>
-              Budgets
-            </h1>
-
-            <p>
-              Plan your spending, stay in
-              control, and achieve your goals.
-            </p>
-
+            <h1>Budgets</h1>
+            <p>Plan your spending, stay in control, and achieve your goals.</p>
           </div>
 
           <button
             type="button"
             className="create-budget-button"
-            onClick={
-              openCreateModal
-            }
+            onClick={openCreateModal}
           >
-            <Plus size={19} />
-            Create Budget
+            <Plus size={19} /> Create Budget
           </button>
-
         </section>
-
-        {/* SUMMARY */}
 
         <section className="budget-summary">
+          <SummaryCard
+            icon={<Wallet size={25} />}
+            color="blue"
+            value={monthlyIncome}
+            label="Monthly Income"
+          />
 
-          {/* INCOME */}
+          <SummaryCard
+            icon={<BarChart3 size={25} />}
+            color="pink"
+            value={totalBudgeted}
+            label="Total Budgeted"
+            note={`${incomeBudgetPercentage}% of income`}
+          />
 
-          <div className="budget-summary-card">
+          <SummaryCard
+            icon={<Wallet size={25} />}
+            color="orange"
+            value={remaining}
+            label="Budget Remaining"
+            note={remaining < 0 ? "Over budget" : `${remainingIncomePercentage}% of income left`}
+            negative={remaining < 0}
+          />
 
-            <div className="budget-summary-icon blue">
-              <Wallet size={25} />
-            </div>
-
-            <div>
-
-              <strong>
-                ₹
-                {monthlyIncome.toLocaleString(
-                  "en-IN"
-                )}
-              </strong>
-
-              <span>
-                Monthly Income
-              </span>
-
-            </div>
-
-          </div>
-
-          {/* TOTAL BUDGET */}
-
-          <div className="budget-summary-card">
-
-            <div className="budget-summary-icon pink">
-              <BarChart4 size={25} />
-            </div>
-
-            <div>
-
-              <strong>
-                ₹
-                {totalBudgeted.toLocaleString(
-                  "en-IN"
-                )}
-              </strong>
-
-              <span>
-                Total Budgeted
-              </span>
-
-              <small className="budget-green-text">
-                {budgetPercentage}% of income
-              </small>
-
-            </div>
-
-          </div>
-
-          {/* REMAINING */}
-
-          <div className="budget-summary-card">
-
-            <div className="budget-summary-icon orange">
-              <Wallet size={25} />
-            </div>
-
-            <div>
-
-              <strong>
-                ₹
-                {remaining.toLocaleString(
-                  "en-IN"
-                )}
-              </strong>
-
-              <span>
-                Remaining
-              </span>
-
-              <small className="budget-green-text">
-                {remainingPercentage}% of income
-              </small>
-
-            </div>
-
-          </div>
-
-          {/* DAYS */}
-
-          <div className="budget-summary-card">
-
-            <div className="budget-summary-icon blue">
-              <CalendarDays size={25} />
-            </div>
-
-            <div>
-
-              <strong>
-                {new Date(
-                  2026,
-                  new Date(
-                    `${selectedMonth} 01`
-                  ).getMonth() + 1,
-                  0
-                ).getDate()}{" "}
-                days
-              </strong>
-
-              <span>
-                In selected month
-              </span>
-
-            </div>
-
-          </div>
-
+          <SummaryCard
+            icon={<CreditCard size={25} />}
+            color="purple"
+            value={totalSpent}
+            label="Total Spent"
+            note={`${displayBudgets.length} categories`}
+          />
         </section>
-
-        {/* CONTENT GRID */}
 
         <section className="budget-content-grid">
-
-          {/* LEFT */}
-
-          <div className="budget-left">
-
-            {/* BUDGET CATEGORIES */}
-
-            <div className="budget-panel categories-panel">
-
-              <div className="budget-panel-header">
-
-                <div>
-
-                  <h2>
-                    Budget Categories
-                  </h2>
-
-                </div>
-
-                <div className="budget-view">
-
-                  <span>
-                    View:
-                  </span>
-
-                  <select
-                    value={viewMonth}
-                    onChange={(event) =>
-                      setViewMonth(
-                        event.target.value
-                      )
-                    }
-                  >
-                    <option>
-                      This Month
-                    </option>
-
-                    <option>
-                      Last Month
-                    </option>
-
-                    <option>
-                      Next Month
-                    </option>
-                  </select>
-
-                </div>
-
+          <div className="budget-panel budget-category-panel">
+            <div className="budget-panel-heading">
+              <div>
+                <h2>Spending by Category</h2>
+                <p>
+                  {selectedDate.toLocaleDateString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </p>
               </div>
-
-              {/* TABLE HEADER */}
-
-              <div className="budget-table-header">
-
-                <span>
-                  Category
-                </span>
-
-                <span>
-                  Spent
-                </span>
-
-                <span>
-                  Budget
-                </span>
-
-                <span>
-                  Progress
-                </span>
-
-                <span></span>
-
-              </div>
-
-              {/* CATEGORY LIST */}
-
-              <div className="budget-category-list">
-
-                {loading ? (
-                  <div className="budget-empty">
-
-                    <Wallet size={35} />
-
-                    <h3>
-                      Loading budgets...
-                    </h3>
-
-                    <p>
-                      Getting your budgets
-                      from MongoDB.
-                    </p>
-
-                  </div>
-                ) : (
-                  displayBudgets.map(
-                    (item) => {
-
-                      const Icon =
-                        iconMap[
-                          item.iconKey
-                        ] ||
-                        MoreHorizontal;
-
-                      const percentage =
-                        item.budget > 0
-                          ? Math.round(
-                              (Number(
-                                item.spent
-                              ) /
-                                Number(
-                                  item.budget
-                                )) *
-                                100
-                            )
-                          : 0;
-
-                      const warning =
-                        percentage >=
-                        80;
-
-                      return (
-                        <div
-                          className="budget-category-row"
-                          key={item.id}
-                        >
-
-                          {/* CATEGORY */}
-
-                          <div className="budget-category-name">
-
-                            <div
-                              className={`budget-category-icon ${item.color}`}
-                            >
-                              <Icon
-                                size={17}
-                              />
-                            </div>
-
-                            <span>
-                              {item.name}
-                            </span>
-
-                          </div>
-
-                          {/* SPENT */}
-
-                          <strong>
-                            ₹
-                            {Number(
-                              item.spent
-                            ).toLocaleString(
-                              "en-IN"
-                            )}
-                          </strong>
-
-                          {/* BUDGET */}
-
-                          <strong>
-                            ₹
-                            {Number(
-                              item.budget
-                            ).toLocaleString(
-                              "en-IN"
-                            )}
-                          </strong>
-
-                          {/* PROGRESS */}
-
-                          <div className="budget-progress-area">
-
-                            <div className="budget-progress">
-
-                              <div
-                                className={
-                                  warning
-                                    ? "warning"
-                                    : ""
-                                }
-                                style={{
-                                  width: `${Math.min(
-                                    percentage,
-                                    100
-                                  )}%`,
-                                }}
-                              ></div>
-
-                            </div>
-
-                            <span>
-                              {percentage}%
-                            </span>
-
-                          </div>
-
-                          {/* MORE */}
-
-                          <div className="budget-more-wrapper">
-
-                            <button
-                              type="button"
-                              className="budget-more"
-                              disabled={
-                                deletingId ===
-                                item.id
-                              }
-                              onClick={() =>
-                                setMenuOpen(
-                                  menuOpen ===
-                                    item.id
-                                    ? null
-                                    : item.id
-                                )
-                              }
-                            >
-                              <MoreHorizontal
-                                size={19}
-                              />
-                            </button>
-
-                            {menuOpen ===
-                              item.id && (
-                              <div className="budget-action-menu">
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openEditModal(
-                                      item
-                                    )
-                                  }
-                                >
-                                  <Pencil
-                                    size={15}
-                                  />
-                                  Edit
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="delete"
-                                  onClick={() =>
-                                    deleteBudget(
-                                      item.id
-                                    )
-                                  }
-                                >
-                                  <Trash2
-                                    size={15}
-                                  />
-                                  Delete
-                                </button>
-
-                              </div>
-                            )}
-
-                          </div>
-
-                        </div>
-                      );
-                    }
-                  )
-                )}
-
-                {/* EMPTY STATE */}
-
-                {!loading &&
-                  displayBudgets.length ===
-                    0 && (
-                    <div className="budget-empty">
-
-                      <Wallet size={35} />
-
-                      <h3>
-                        No budgets yet
-                      </h3>
-
-                      <p>
-                        Create your first
-                        budget to start
-                        tracking spending.
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={
-                          openCreateModal
-                        }
-                      >
-                        <Plus size={17} />
-                        Create Budget
-                      </button>
-
-                    </div>
-                  )}
-
-              </div>
-
+              <BarChart3 size={19} />
             </div>
 
-            {/* AI INSIGHTS */}
-
-            <div className="budget-panel budget-insights">
-
-              <div className="insights-heading">
-
-                <div className="insights-icon">
-                  <Sparkles size={23} />
-                </div>
-
-                <h2>
-                  AI Budget Insights
-                </h2>
-
-              </div>
-
-              <div className="insight-row">
-
-                <CheckCircle2 size={19} />
-
-                <span>
-                  You're doing great!
-                  You're within budget
-                  for most categories.
-                </span>
-
-              </div>
-
-              {warningBudgets.length >
-                0 && (
-                <div className="insight-row warning">
-
-                  <AlertCircle size={19} />
-
-                  <span>
-                    {warningBudgets
-                      .map(
-                        (item) =>
-                          item.name
-                      )
-                      .join(", ")}{" "}
-                    {warningBudgets.length ===
-                    1
-                      ? "is"
-                      : "are"}{" "}
-                    close to the
-                    budget limit.
-                  </span>
-
-                </div>
-              )}
-
-              <div className="insight-row">
-
-                <CheckCircle2 size={19} />
-
-                <span>
-                  You can still spend ₹
-                  {Math.max(
-                    remaining,
-                    0
-                  ).toLocaleString(
-                    "en-IN"
-                  )}{" "}
-                  this month.
-                </span>
-
-              </div>
-
-              <div className="insight-row blue">
-
-                <Lightbulb size={19} />
-
-                <span>
-                  Keep essential
-                  categories under
-                  control to improve
-                  your savings.
-                </span>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* RIGHT */}
-
-          <div className="budget-right">
-
-            {/* BUDGET OVERVIEW */}
-
-            <div className="budget-panel overview-panel">
-
-              <h2>
-                Budget Overview
-              </h2>
-
-              <div className="overview-content">
-
-                <div
-                  className="budget-donut"
-                  style={{
-                    background:
-                      "conic-gradient(#ff304f 0deg 162deg, #4d9fff 162deg 270deg, #ff9d42 270deg 324deg, #4b5057 324deg 360deg)",
-                  }}
-                >
-
-                  <div className="budget-donut-inner">
-
-                    <strong>
-                      ₹
-                      {totalSpent.toLocaleString(
-                        "en-IN"
-                      )}
-                    </strong>
-
-                    <span>
-                      Spent
-                    </span>
-
-                  </div>
-
-                </div>
-
-                <div className="overview-legend">
-
-                  <Legend
-                    color="green"
-                    name="Needs"
-                    value="45%"
-                  />
-
-                  <Legend
-                    color="blue"
-                    name="Wants"
-                    value="30%"
-                  />
-
-                  <Legend
-                    color="orange"
-                    name="Savings & Goals"
-                    value="15%"
-                  />
-
-                  <Legend
-                    color="gray"
-                    name="Others"
-                    value="10%"
-                  />
-
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* MONTHLY TREND */}
-
-            <div className="budget-panel monthly-trend">
-
-              <h2>
-                Monthly Budget Trend
-              </h2>
-
-              <div className="trend-chart">
-
-                <div className="trend-values">
-
-                  <span>
-                    60K
-                  </span>
-
-                  <span>
-                    40K
-                  </span>
-
-                  <span>
-                    20K
-                  </span>
-
-                  <span>
-                    0
-                  </span>
-
-                </div>
-
-                <div className="trend-bars">
-
-                  <TrendBar
-                    month="Apr"
-                    height="55%"
-                  />
-
-                  <TrendBar
-                    month="May"
-                    height="68%"
-                  />
-
-                  <TrendBar
-                    month="Jun"
-                    height="77%"
-                  />
-
-                  <TrendBar
-                    month="Jul"
-                    height="70%"
-                  />
-
-                  <TrendBar
-                    month="Aug"
-                    height="88%"
-                  />
-
-                  <TrendBar
-                    month="Sep"
-                    height="82%"
-                    active
-                  />
-
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* QUICK ACTIONS */}
-
-            <div className="budget-panel quick-actions">
-
-              <h2>
-                Quick Actions
-              </h2>
-
-              <QuickAction
-                icon={
-                  <SlidersHorizontal
-                    size={18}
-                  />
-                }
-                text="Adjust Budget"
-                onClick={
-                  openCreateModal
-                }
-              />
-
-              <QuickAction
-                icon={
-                  <Sparkles size={18} />
-                }
-                text="Auto-Allocate Budget"
-                onClick={
-                  autoAllocateBudget
-                }
-              />
-
-              <QuickAction
-                icon={
-                  <BarChart4 size={18} />
-                }
-                text="View Spending Analytics"
-                onClick={() =>
-                  navigate(
-                    "/analytics"
-                  )
-                }
-              />
-
-              <QuickAction
-                icon={
-                  <BellRing size={18} />
-                }
-                text={
-                  budgetAlerts
-                    ? "Disable Budget Alerts"
-                    : "Set Budget Alerts"
-                }
-                onClick={() =>
-                  setBudgetAlerts(
-                    (previous) =>
-                      !previous
-                  )
-                }
-              />
-
-              <button
-                type="button"
-                className="quick-action-item reset-budget-action"
-                onClick={
-                  resetBudgets
-                }
+            <div className="budget-donut-layout">
+              <div
+                className="budget-donut-chart"
+                style={{ background: donutBackground }}
               >
-
-                <div className="quick-action-icon">
-                  <Trash2 size={18} />
+                <div className="budget-donut-hole">
+                  <span>Total Spent</span>
+                  <strong>
+                    ₹{totalSpent.toLocaleString("en-IN")}
+                  </strong>
                 </div>
+              </div>
 
-                <span>
-                  Reset Month Budgets
-                </span>
-
-                <ArrowRight
-                  size={17}
-                />
-
-              </button>
-
+              <div className="budget-legend">
+                {categorySpending.length ? (
+                  categorySpending.map((item) => (
+                    <Legend
+                      key={item.id}
+                      color={item.color}
+                      name={item.name}
+                      value={`₹${item.amount.toLocaleString("en-IN")} · ${
+                        categoryTotal
+                          ? Math.round((item.amount / categoryTotal) * 100)
+                          : 0
+                      }%`}
+                    />
+                  ))
+                ) : (
+                  <p className="budget-empty-state">
+                    No expenses recorded for this month.
+                  </p>
+                )}
+              </div>
             </div>
-
           </div>
 
+          <div className="budget-panel budget-trend-panel">
+            <div className="budget-panel-heading">
+              <div>
+                <h2>Monthly Spending Trend</h2>
+                <p>Last six months</p>
+              </div>
+              <BarChart3 size={19} />
+            </div>
+
+            <div className="budget-trend-chart">
+              {monthlyTrend.map((item, index) => (
+                <TrendBar
+                  key={`${item.month}-${index}`}
+                  month={item.month}
+                  amount={item.spent}
+                  height={`${
+                    item.spent
+                      ? Math.max((item.spent / maxTrendValue) * 100, 5)
+                      : 0
+                  }%`}
+                  active={index === monthlyTrend.length - 1}
+                />
+              ))}
+            </div>
+
+            <div className="budget-trend-footer">
+              <span>Selected month</span>
+              <strong>
+                ₹{(monthlyTrend[5]?.spent || 0).toLocaleString("en-IN")}
+              </strong>
+            </div>
+          </div>
         </section>
 
-      </main>
-
-
-      {modalOpen && (
-        <div
-          className="budget-modal-overlay"
-          onClick={closeModal}
-        >
-
-          <div
-            className="budget-modal"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-
-            {/* MODAL HEADER */}
-
-            <div className="budget-modal-header">
-
-              <div>
-
-                <span>
-                  {editingBudget
-                    ? "UPDATE BUDGET"
-                    : "NEW BUDGET"}
-                </span>
-
-                <h2>
-                  {editingBudget
-                    ? "Edit Budget"
-                    : "Create Budget"}
-                </h2>
-
-              </div>
-
-              <button
-                type="button"
-                className="budget-modal-close"
-                onClick={
-                  closeModal
-                }
-                disabled={saving}
-              >
-                <X size={20} />
-              </button>
-
+        <section className="budget-panel budget-allocation-panel">
+          <div className="budget-panel-heading">
+            <div>
+              <h2>Budget Allocation</h2>
+              <p>Manage your spending limits by category.</p>
             </div>
 
-            {/* FORM */}
-
-            <form
-              onSubmit={
-                handleSaveBudget
-              }
+            <button
+              type="button"
+              className="budget-text-button"
+              onClick={autoAllocateBudget}
             >
+              <Sparkles size={16} /> Auto Allocate
+            </button>
+          </div>
 
-              {/* CATEGORY */}
+          <div className="budget-allocation-list">
+            {displayBudgets.map((item) => {
+              const category = categories.find(
+                (entry) => entry.name === item.name
+              );
+              const Icon = category?.icon || MoreHorizontal;
 
-              <div className="budget-form-group">
+              const percentage =
+                item.budget > 0
+                  ? Math.round((item.spent / item.budget) * 100)
+                  : 0;
 
-                <label>
-                  Category
-                </label>
+              return (
+                <div className="budget-allocation-item" key={item.id}>
+                  <div className={`budget-category-icon ${category?.color || "gray"}`}>
+                    <Icon size={20} />
+                  </div>
 
-                <select
-                  name="name"
-                  value={
-                    formData.name
-                  }
-                  onChange={
-                    handleFormChange
-                  }
-                  disabled={
-                    Boolean(
-                      editingBudget
-                    ) || saving
-                  }
-                >
+                  <div className="budget-allocation-details">
+                    <div className="budget-allocation-title">
+                      <strong>{item.name}</strong>
 
-                  {categoryOptions.map(
-                    (category) => (
-                      <option
-                        key={
-                          category.name
-                        }
-                        value={
-                          category.name
-                        }
-                      >
-                        {category.name}
-                      </option>
-                    )
-                  )}
+                      <div className="budget-item-actions">
+                        <button
+                          type="button"
+                          aria-label={`Edit ${item.name}`}
+                          onClick={() => openEditModal(item)}
+                        >
+                          <Pencil size={16} />
+                        </button>
 
-                </select>
+                        <button
+                          type="button"
+                          aria-label={`More options for ${item.name}`}
+                          onClick={() =>
+                            setMenuOpen(
+                              menuOpen === item.id ? null : item.id
+                            )
+                          }
+                        >
+                          <MoreHorizontal size={18} />
+                        </button>
 
-              </div>
+                        {menuOpen === item.id && (
+                          <div className="budget-item-menu">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(item)}
+                            >
+                              <Pencil size={15} /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteBudget(item.id)}
+                            >
+                              <Trash2 size={15} /> Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-              {/* BUDGET AMOUNT */}
+                    <div className="budget-progress-track">
+                      <div
+                        className={`budget-progress-fill ${category?.color || "gray"} ${
+                          percentage >= 100 ? "over-limit" : ""
+                        }`}
+                        style={{
+                          width: `${Math.min(percentage, 100)}%`,
+                        }}
+                      />
+                    </div>
 
-              <div className="budget-form-group">
+                    <div className="budget-allocation-meta">
+                      <span>
+                        ₹{item.spent.toLocaleString("en-IN")} spent
+                      </span>
+                      <span>
+                        ₹{Number(item.budget).toLocaleString("en-IN")} budget
+                      </span>
+                    </div>
+                  </div>
 
-                <label>
-                  Budget Amount
-                </label>
-
-                <div className="budget-input-with-symbol">
-
-                  <span>
-                    ₹
-                  </span>
-
-                  <input
-                    type="number"
-                    name="budget"
-                    min="1"
-                    placeholder="5000"
-                    value={
-                      formData.budget
-                    }
-                    onChange={
-                      handleFormChange
-                    }
-                    disabled={saving}
-                    required
-                  />
-
+                  <div
+                    className={`budget-usage-percentage ${
+                      percentage >= 100 ? "budget-red-text" : ""
+                    }`}
+                  >
+                    {percentage}%
+                  </div>
                 </div>
+              );
+            })}
+          </div>
 
+          <div className="budget-allocation-footer">
+            <span>Total allocation</span>
+            <strong>
+              ₹{totalBudgeted.toLocaleString("en-IN")}
+            </strong>
+          </div>
+        </section>
+
+        <section className="budget-bottom-grid">
+          <div className="budget-panel budget-insight-panel">
+            <div className="budget-insight-icon">
+              <Lightbulb size={23} />
+            </div>
+
+            <div className="budget-insight-content">
+              <h2>Smart Budget Insight</h2>
+              <p>{insightMessage}</p>
+
+              {monthlyIncome <= 0 && (
+                <button
+                  type="button"
+                  className="budget-text-button"
+                  onClick={() => navigate("/profile")}
+                >
+                  Set monthly income <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="budget-panel budget-alert-settings">
+            <div className="budget-panel-heading">
+              <div>
+                <h2>Budget Alerts</h2>
+                <p>Get notified when categories approach their limits.</p>
               </div>
+              <Bell size={20} />
+            </div>
 
-              {/* ACTIONS */}
+            <label className="budget-toggle-row">
+              <span>
+                <strong>Spending alerts</strong>
+                <small>Show alerts when a budget reaches 80%.</small>
+              </span>
 
-              <div className="budget-form-actions">
+              <input
+                type="checkbox"
+                checked={budgetAlerts}
+                onChange={(event) =>
+                  setBudgetAlerts(event.target.checked)
+                }
+              />
+            </label>
+
+            {budgetAlerts && warningBudgets.length > 0 && (
+              <p className="budget-alert-warning">
+                <AlertCircle size={16} />
+                {warningBudgets.length} categories need attention.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="budget-panel budget-actions-panel">
+          <div className="budget-panel-heading">
+            <div>
+              <h2>Quick Actions</h2>
+              <p>Manage your finances in a few clicks.</p>
+            </div>
+          </div>
+
+          <div className="budget-quick-actions">
+            <QuickAction
+              icon={<Plus size={19} />}
+              text="Create a budget"
+              onClick={openCreateModal}
+            />
+            <QuickAction
+              icon={<CreditCard size={19} />}
+              text="View transactions"
+              onClick={() => navigate("/transactions")}
+            />
+            <QuickAction
+              icon={<BarChart3 size={19} />}
+              text="View analytics"
+              onClick={() => navigate("/analytics")}
+            />
+          </div>
+
+          <div className="budget-reset-row">
+            <span>Want to start fresh?</span>
+            <button type="button" onClick={resetBudgets}>
+              Reset budgets
+            </button>
+          </div>
+        </section>
+
+        {modalOpen && (
+          <div
+            className="budget-modal-overlay"
+            onClick={closeModal}
+            role="presentation"
+          >
+            <div
+              className="budget-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="budget-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="budget-modal-header">
+                <div>
+                  <span>{editingId !== null ? "UPDATE BUDGET" : "NEW BUDGET"}</span>
+                  <h2 id="budget-modal-title">
+                    {editingId !== null ? "Edit Budget" : "Create Budget"}
+                  </h2>
+                </div>
 
                 <button
                   type="button"
-                  className="budget-cancel-button"
-                  onClick={
-                    closeModal
-                  }
-                  disabled={saving}
+                  className="budget-modal-close"
+                  onClick={closeModal}
+                  aria-label="Close"
                 >
-                  Cancel
+                  <X size={20} />
                 </button>
-
-                <button
-                  type="submit"
-                  className="budget-save-button"
-                  disabled={saving}
-                >
-
-                  <Save size={17} />
-
-                  {saving
-                    ? "Saving..."
-                    : editingBudget
-                    ? "Save Changes"
-                    : "Create Budget"}
-
-                </button>
-
               </div>
 
-            </form>
+              <form onSubmit={handleSaveBudget}>
+                <div className="budget-form-group">
+                  <label htmlFor="budget-category">Category</label>
+                  <select
+                    id="budget-category"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleFormChange}
+                    disabled={editingId !== null}
+                    required
+                  >
+                    {categories.map((category) => (
+                      <option key={category.name} value={category.name}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
+                <div className="budget-form-group">
+                  <label htmlFor="budget-amount">Budget Amount</label>
+                  <div className="budget-input-with-symbol">
+                    <span>₹</span>
+                    <input
+                      id="budget-amount"
+                      type="number"
+                      name="budget"
+                      min="1"
+                      step="0.01"
+                      value={formData.budget}
+                      onChange={handleFormChange}
+                      placeholder="5000"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="budget-form-group">
+                  <label htmlFor="budget-spent">Already Spent</label>
+                  <div className="budget-input-with-symbol">
+                    <span>₹</span>
+                    <input
+                      id="budget-spent"
+                      type="number"
+                      name="spent"
+                      min="0"
+                      step="0.01"
+                      value={formData.spent}
+                      onChange={handleFormChange}
+                      placeholder="0"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="budget-form-actions">
+                  <button
+                    type="button"
+                    className="budget-cancel-button"
+                    onClick={closeModal}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="budget-save-button"
+                  >
+                    <Save size={17} />
+                    {editingId !== null ? "Save Changes" : "Create Budget"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-
-        </div>
-      )}
-
+        )}
+      </main>
     </div>
   );
 }
 
-function Legend({
+function SummaryCard({
+  icon,
   color,
-  name,
   value,
+  label,
+  note,
+  negative = false,
 }) {
+  return (
+    <div className="budget-summary-card">
+      <div className={`budget-summary-icon ${color}`}>
+        {icon}
+      </div>
+      <div>
+        <strong>₹{Number(value || 0).toLocaleString("en-IN")}</strong>
+        <span>{label}</span>
+        {note && (
+          <small className={negative ? "budget-red-text" : "budget-green-text"}>
+            {note}
+          </small>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Legend({ color, name, value }) {
   return (
     <div className="budget-legend-item">
-
       <span
-        className={`legend-dot ${color}`}
-      ></span>
-
-      <span>
-        {name}
-      </span>
-
-      <strong>
-        {value}
-      </strong>
-
+        className="legend-dot"
+        style={{ backgroundColor: colors[color] || colors.gray }}
+      />
+      <span>{name}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-/* =========================================================
-   TREND BAR COMPONENT
-========================================================= */
-
-function TrendBar({
-  month,
-  height,
-  active = false,
-}) {
+function TrendBar({ month, amount = 0, height, active = false }) {
   return (
     <div className="trend-bar-item">
-
       <div className="trend-bar-wrapper">
-
         <div
-          className={
-            active
-              ? "trend-bar active"
-              : "trend-bar"
-          }
-          style={{
-            height,
-          }}
-        ></div>
-
+          className={active ? "trend-bar active" : "trend-bar"}
+          style={{ height }}
+          title={`${month}: ₹${Number(amount).toLocaleString("en-IN")}`}
+        />
       </div>
-
-      <span>
-        {month}
-      </span>
-
+      <span>{month}</span>
     </div>
   );
 }
 
-function QuickAction({
-  icon,
-  text,
-  onClick,
-}) {
+function QuickAction({ icon, text, onClick }) {
   return (
     <button
       type="button"
       className="quick-action-item"
       onClick={onClick}
     >
-
-      <div className="quick-action-icon">
-        {icon}
-      </div>
-
-      <span>
-        {text}
-      </span>
-
+      <div className="quick-action-icon">{icon}</div>
+      <span>{text}</span>
       <ArrowRight size={17} />
-
     </button>
   );
 }
-
 
 export default Budget;
