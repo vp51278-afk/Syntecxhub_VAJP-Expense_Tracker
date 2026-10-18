@@ -19,7 +19,6 @@ function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-
     setError("");
 
     if (!API_URL) {
@@ -29,22 +28,21 @@ function Login() {
       return;
     }
 
+    const loginEmail = email.trim().toLowerCase();
+
     setLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/auth/login`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-          }),
-        }
-      );
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: loginEmail,
+          password,
+        }),
+      });
 
       const data = await response.json().catch(() => ({}));
 
@@ -69,17 +67,42 @@ function Login() {
         return;
       }
 
-      if (!data.token || !data.user) {
+      // Confirm that the backend returned a token and user.
+      if (!data.token || !data.user || typeof data.user !== "object") {
         setError(
           "Login response is missing the user or token. Check your backend response."
         );
         return;
       }
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      const backendUser = data.user;
 
-      navigate("/dashboard");
+      // Use the user returned by the backend.
+      // Only use the login email as a fallback if the response omits email.
+      const loggedInUser = {
+        ...backendUser,
+        email: backendUser.email || loginEmail,
+        name:
+          backendUser.name ||
+          backendUser.fullName ||
+          backendUser.username ||
+          backendUser.displayName ||
+          "",
+      };
+
+      // Save authentication and user details for Profile.jsx.
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("expenseflow-token", data.token);
+
+      localStorage.setItem("user", JSON.stringify(loggedInUser));
+      localStorage.setItem(
+        "expenseflow-user",
+        JSON.stringify(loggedInUser)
+      );
+
+      // Navigate only after storing the logged-in user's data.
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       console.error("Login Error:", err);
 
@@ -151,7 +174,7 @@ function Login() {
           <div className="forgot-row">
             <span></span>
 
-            <button type="button">
+            <button type="button" disabled>
               Forgot Password?
             </button>
           </div>
