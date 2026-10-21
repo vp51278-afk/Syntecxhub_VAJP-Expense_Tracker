@@ -4,7 +4,6 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
   ArrowDownRight,
-  ArrowLeft,
   ArrowRight,
   Bell,
   CalendarDays,
@@ -239,10 +238,11 @@ export default function Simulator() {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(
+        const message =
           result?.message ||
-            `Request failed (${response.status}). Please try again.`
-        );
+          result?.error ||
+          `Request failed (${response.status}). Please try again.`;
+        throw new Error(message);
       }
 
       return result;
@@ -599,7 +599,10 @@ export default function Simulator() {
                     type="text"
                     placeholder="e.g. Laptop, phone, headphones"
                     value={itemName}
-                    onChange={(event) => setItemName(event.target.value)}
+                    onChange={(event) => {
+                      setItemName(event.target.value);
+                      if (simulationError) setSimulationError("");
+                    }}
                     maxLength={120}
                     required
                   />
@@ -617,7 +620,10 @@ export default function Simulator() {
                         step="0.01"
                         placeholder="0"
                         value={price}
-                        onChange={(event) => setPrice(event.target.value)}
+                        onChange={(event) => {
+                          setPrice(event.target.value);
+                          if (simulationError) setSimulationError("");
+                        }}
                         required
                       />
                     </div>
