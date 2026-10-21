@@ -97,22 +97,33 @@ function getPreviousMonth(value) {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
-function getLastSixMonths(value) {
+function getLastNMonths(value, count) {
   const months = [];
-
   let current = value;
-
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < count; i++) {
     months.unshift(current);
     current = getPreviousMonth(current);
   }
-
   return months;
 }
+
+function getPeriodMonths(period, selectedMonth) {
+  if (period === "Last Month") return [getPreviousMonth(selectedMonth)];
+  if (period === "Last 3 Months") return getLastNMonths(selectedMonth, 3);
+  return [selectedMonth];
+}
+
 
 
 function formatMoney(amount) {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+}
+
+function formatAxisValue(amount) {
+  const value = Number(amount || 0);
+  if (value >= 100000) return `${(value / 1000).toFixed(0)}K`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `${Math.round(value)}`;
 }
 
 
@@ -144,7 +155,7 @@ function Analytics() {
   const [previousData, setPreviousData] =
     useState(null);
 
-  const [trendData, setTrendData] =
+  const [monthlyHistory, setMonthlyHistory] =
     useState([]);
 
   const [loading, setLoading] =
@@ -155,153 +166,67 @@ function Analytics() {
 
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchAnalytics = async () => {
       try {
         setLoading(true);
         setError("");
 
-        const token =
-          localStorage.getItem("token");
-
+        const token = localStorage.getItem("token");
         if (!token) {
           window.location.href = "/login";
           return;
         }
 
-        const [year, month] =
-          selectedMonth.split("-");
+        const monthsToFetch = getLastNMonths(selectedMonth, 12);
+        const results = await Promise.all(
+          monthsToFetch.map(async (monthValue) => {
+            const [year, month] = monthValue.split("-");
+            const response = await fetch(
+              `${API_BASE_URL}/api/analytics?month=${Number(month) - 1}&year=${year}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
 
-          const currentResponse = await fetch(
-            `${API_BASE_URL}/api/analytics?month=${
-              Number(month) - 1
-            }&year=${year}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+            if (response.status === 401) {
+              localStorage.removeItem("token");
+              localStorage.removeItem("user");
+              window.location.href = "/login";
+              throw new Error("Your session expired. Please log in again.");
             }
-          );
 
-        const currentResult =
-          await currentResponse.json();
-
-        if (
-          currentResponse.status === 401
-        ) {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!currentResponse.ok) {
-          throw new Error(
-            currentResult.message ||
-              "Unable to load analytics."
-          );
-        }
-
-        setAnalyticsData(currentResult);
-
-
-        const previousMonth =
-          getPreviousMonth(selectedMonth);
-
-        const [previousYear, previousMonthNumber] =
-          previousMonth.split("-");
-          const previousResponse = await fetch(
-            `${API_BASE_URL}/api/analytics?month=${
-              Number(previousMonthNumber) - 1
-            }&year=${previousYear}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              return { month: monthValue, data: null, error: result.message };
             }
-          );
+            return { month: monthValue, data: result };
+          })
+        );
 
-        const previousResult =
-          await previousResponse.json();
-
-        if (previousResponse.ok) {
-          setPreviousData(previousResult);
-        } else {
-          setPreviousData(null);
+        if (cancelled) return;
+        const current = results.find((item) => item.month === selectedMonth);
+        if (!current?.data) {
+          throw new Error(current?.error || "Unable to load analytics for this month.");
         }
 
-
-        const sixMonths =
-          getLastSixMonths(selectedMonth);
-
-        const trendResults =
-          await Promise.all(
-            sixMonths.map(async (monthValue) => {
-              const [trendYear, trendMonth] =
-                monthValue.split("-");
-
-              try {
-                const response = await fetch(
-                  `${API_BASE_URL}/api/analytics?month=${
-                    Number(trendMonth) - 1
-                  }&year=${trendYear}`,
-                  {
-                    headers: {
-                      Authorization: `Bearer ${token}`,
-                    },
-                  }
-                );
-
-                if (!response.ok) {
-                  return {
-                    month: monthValue,
-                    amount: 0,
-                  };
-                }
-
-                const result =
-                  await response.json();
-
-                const category =
-                  result.categories?.find(
-                    (item) =>
-                      item.category ===
-                      selectedCategory
-                  );
-
-                return {
-                  month: monthValue,
-                  amount:
-                    category?.amount || 0,
-                };
-              } catch {
-                return {
-                  month: monthValue,
-                  amount: 0,
-                };
-              }
-            })
-          );
-
-        setTrendData(trendResults);
+        setAnalyticsData(current.data);
+        const previousMonth = getPreviousMonth(selectedMonth);
+        const previous = results.find((item) => item.month === previousMonth);
+        setPreviousData(previous?.data || null);
+        setMonthlyHistory(results.filter((item) => item.data));
       } catch (err) {
-        console.error(
-          "Analytics Fetch Error:",
-          err
-        );
-
-        setError(
-          err.message ||
-            "Unable to load analytics."
-        );
+        if (!cancelled) {
+          console.error("Analytics Fetch Error:", err);
+          setError(err.message || "Unable to load analytics.");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchAnalytics();
-  }, [selectedMonth, selectedCategory]);
-
+    return () => { cancelled = true; };
+  }, [selectedMonth]);
 
   if (loading) {
     return (
@@ -351,145 +276,94 @@ function Analytics() {
   }
 
 
-  const summary =
-    analyticsData?.summary || {
-      totalIncome: 0,
-      totalExpenses: 0,
-      savings: 0,
-      savingsPercentage: 0,
-      totalBudget: 0,
-      budgetUsage: 0,
+  const summary = analyticsData?.summary || {
+    totalIncome: 0,
+    totalExpenses: 0,
+    savings: 0,
+    savingsPercentage: 0,
+    totalBudget: 0,
+    budgetUsage: 0,
+  };
+
+  const previousIncome = previousData?.summary?.totalIncome || 0;
+  const previousExpenses = previousData?.summary?.totalExpenses || 0;
+  const incomeChange = previousIncome > 0
+    ? Math.round(((summary.totalIncome - previousIncome) / previousIncome) * 100)
+    : 0;
+  const expenseChange = previousExpenses > 0
+    ? Math.round(((summary.totalExpenses - previousExpenses) / previousExpenses) * 100)
+    : 0;
+  const savingsRate = Number(summary.savingsPercentage || 0);
+
+  const displayedMonthlyTrend = getLastNMonths(
+    selectedMonth,
+    chartPeriod === "Last 3 Months" ? 3 : chartPeriod === "Last 12 Months" ? 12 : 6
+  ).map((month) => {
+    const data = monthlyHistory.find((item) => item.month === month)?.data;
+    return {
+      month,
+      income: Number(data?.summary?.totalIncome || 0),
+      expenses: Number(data?.summary?.totalExpenses || 0),
     };
-
-  const rawCategories =
-    analyticsData?.categories || [];
-
-  const categories =
-    rawCategories.map((category) => ({
-      ...category,
-      icon:
-        categoryIcons[category.category] ||
-        MoreHorizontal,
-      className:
-        categoryClasses[category.category] ||
-        "others",
-    }));
-
-  const topCategory =
-    analyticsData?.topCategory ||
-    categories[0] || {
-      category: "No Data",
-      amount: 0,
-      percentage: 0,
-    };
-
-  const previousIncome =
-    previousData?.summary?.totalIncome || 0;
-
-  const previousExpenses =
-    previousData?.summary?.totalExpenses || 0;
-
-  let incomeChange = 0;
-
-  if (previousIncome > 0) {
-    incomeChange = Math.round(
-      ((summary.totalIncome -
-        previousIncome) /
-        previousIncome) *
-        100
-    );
-  }
-
-  let expenseChange = 0;
-
-  if (previousExpenses > 0) {
-    expenseChange = Math.round(
-      ((summary.totalExpenses -
-        previousExpenses) /
-        previousExpenses) *
-        100
-    );
-  }
-  const savingsRate =
-    Number(summary.savingsPercentage || 0);
-
-
-  let displayedTrend =
-    trendData;
-
-  if (chartPeriod === "Last 3 Months") {
-    displayedTrend =
-      trendData.slice(-3);
-  }
-
-  if (chartPeriod === "Last 12 Months") {
-    displayedTrend =
-      trendData;
-  }
-
+  });
   const maxTrendValue = Math.max(
-    ...displayedTrend.map(
-      (item) => item.amount
-    ),
+    ...displayedMonthlyTrend.flatMap((item) => [item.income, item.expenses]),
     1000
   );
 
+  const categoriesForPeriod = (period) => {
+    const monthSet = new Set(getPeriodMonths(period, selectedMonth));
+    const sums = new Map();
+    monthlyHistory.filter((item) => monthSet.has(item.month)).forEach(({ data }) => {
+      (data.categories || []).forEach((category) => {
+        const name = category.category || "Others";
+        sums.set(name, (sums.get(name) || 0) + Number(category.amount || 0));
+      });
+    });
+    const total = [...sums.values()].reduce((sum, amount) => sum + amount, 0);
+    return [...sums.entries()]
+      .map(([category, amount]) => ({
+        category,
+        amount,
+        percentage: total > 0 ? (amount / total) * 100 : 0,
+        icon: categoryIcons[category] || MoreHorizontal,
+        className: categoryClasses[category] || "others",
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  };
 
-  const recentTransactions =
-    analyticsData?.recentTransactions || [];
+  const categories = (analyticsData?.categories || []).map((category) => ({
+    ...category,
+    icon: categoryIcons[category.category] || MoreHorizontal,
+    className: categoryClasses[category.category] || "others",
+  }));
+  const breakdownCategories = categoriesForPeriod(breakdownPeriod);
+  const spendingCategories = categoriesForPeriod(categoryPeriod);
+  const categoryTrendData = getLastNMonths(selectedMonth, 6).map((month) => {
+    const data = monthlyHistory.find((item) => item.month === month)?.data;
+    const category = data?.categories?.find((item) => item.category === selectedCategory);
+    return { month, amount: Number(category?.amount || 0) };
+  });
+  const categoryTrendMax = Math.max(...categoryTrendData.map((item) => item.amount), 1000);
+
+  const topCategory = analyticsData?.topCategory || categories[0] || {
+    category: "No Data", amount: 0, percentage: 0,
+  };
 
   const merchantMap = {};
-
-  recentTransactions.forEach(
-    (transaction) => {
-      if (transaction.type === "income") {
-        return;
-      }
-
-      const merchantName =
-        transaction.title ||
-        "Other";
-
-      if (!merchantMap[merchantName]) {
-        merchantMap[merchantName] = {
-          name: merchantName,
-          amount: 0,
-          transactions: 0,
-        };
-      }
-
-      merchantMap[merchantName].amount +=
-        Number(transaction.amount || 0);
-
-      merchantMap[merchantName].transactions +=
-        1;
-    }
-  );
-
-  const merchants = Object.values(
-    merchantMap
-  )
-    .sort(
-      (a, b) =>
-        b.amount - a.amount
-    )
-    .slice(0, 5);
-
-  const maxMerchantAmount = Math.max(
-    ...merchants.map(
-      (merchant) => merchant.amount
-    ),
-    1
-  );
-
-
-  const categoryTotal =
-    categories.reduce(
-      (sum, category) =>
-        sum + Number(category.amount || 0),
-      0
-    );
-
+  const merchantMonths = new Set(getPeriodMonths(merchantPeriod, selectedMonth));
+  monthlyHistory.filter((item) => merchantMonths.has(item.month)).forEach(({ data }) => {
+    (data.recentTransactions || []).forEach((transaction) => {
+      if (String(transaction.type || "").toLowerCase() === "income") return;
+      const merchantName = transaction.title || transaction.description || transaction.merchant || "Other";
+      if (!merchantMap[merchantName]) merchantMap[merchantName] = { name: merchantName, amount: 0, transactions: 0 };
+      merchantMap[merchantName].amount += Math.abs(Number(transaction.amount || 0));
+      merchantMap[merchantName].transactions += 1;
+    });
+  });
+  const merchants = Object.values(merchantMap).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const maxMerchantAmount = Math.max(...merchants.map((merchant) => merchant.amount), 1);
+  const categoryTotal = breakdownCategories.reduce((sum, category) => sum + Number(category.amount || 0), 0);
 
   const donutColors = [
     "#ff3151",
@@ -505,7 +379,7 @@ function Analytics() {
   let donutStart = 0;
 
   const donutSegments =
-    categories.map(
+    breakdownCategories.map(
       (category, index) => {
         const percentage =
           categoryTotal > 0
@@ -923,10 +797,10 @@ function Analytics() {
             <div className="bar-chart">
 
               <div className="bar-y-axis">
-                <span>20K</span>
-                <span>15K</span>
-                <span>10K</span>
-                <span>5K</span>
+                <span>{formatAxisValue(maxTrendValue)}</span>
+                <span>{formatAxisValue(maxTrendValue * 0.75)}</span>
+                <span>{formatAxisValue(maxTrendValue * 0.5)}</span>
+                <span>{formatAxisValue(maxTrendValue * 0.25)}</span>
                 <span>0</span>
               </div>
 
@@ -937,23 +811,10 @@ function Analytics() {
                 <div className="chart-grid-line line-3"></div>
                 <div className="chart-grid-line line-4"></div>
 
-                {displayedTrend.map(
+                {displayedMonthlyTrend.map(
                   (item) => {
-                    const incomeHeight =
-                      Math.min(
-                        (summary.totalIncome /
-                          20000) *
-                          190,
-                        190
-                      );
-
-                    const expenseHeight =
-                      Math.min(
-                        (summary.totalExpenses /
-                          20000) *
-                          190,
-                        190
-                      );
+                    const incomeHeight = (item.income / maxTrendValue) * 190;
+                    const expenseHeight = (item.expenses / maxTrendValue) * 190;
 
                     return (
                       <div
@@ -1049,9 +910,7 @@ function Analytics() {
                 <div className="donut-hole">
 
                   <strong>
-                    {formatMoney(
-                      summary.totalExpenses
-                    )}
+                    {formatMoney(categoryTotal)}
                   </strong>
 
                   <span>
@@ -1064,7 +923,7 @@ function Analytics() {
 
               <div className="donut-legend">
 
-                {categories.map(
+                {breakdownCategories.map(
                   (category) => (
                     <div
                       className="donut-legend-row"
@@ -1157,13 +1016,13 @@ function Analytics() {
 
             <div className="category-spending-list">
 
-              {categories.length === 0 ? (
+              {spendingCategories.length === 0 ? (
                 <div className="analytics-empty">
                   No expense data for
                   this month.
                 </div>
               ) : (
-                categories.map(
+                spendingCategories.map(
                   (category) => {
                     const Icon =
                       category.icon;
@@ -1267,9 +1126,10 @@ function Analytics() {
                 }
               >
 
-                {Object.keys(
-                  categoryIcons
-                ).map(
+                {[...new Set([
+                  ...Object.keys(categoryIcons),
+                  ...categories.map((item) => item.category),
+                ])].map(
                   (category) => (
                     <option
                       key={category}
@@ -1333,26 +1193,26 @@ function Analytics() {
 
                   </defs>
 
-                  {displayedTrend.length >
+                  {categoryTrendData.length >
                     0 && (
                     <>
                       <polyline
-                        points={displayedTrend
+                        points={categoryTrendData
                           .map(
                             (item, index) => {
                               const x =
-                                displayedTrend.length ===
+                                categoryTrendData.length ===
                                 1
                                   ? 0
                                   : (index /
-                                      (displayedTrend.length -
+                                      (categoryTrendData.length -
                                         1)) *
                                     700;
 
                               const y =
                                 220 -
                                 (item.amount /
-                                  maxTrendValue) *
+                                  categoryTrendMax) *
                                   180;
 
                               return `${x},${y}`;
@@ -1372,8 +1232,8 @@ function Analytics() {
 
                   <strong>
                     {formatMoney(
-                      displayedTrend[
-                        displayedTrend.length -
+                      categoryTrendData[
+                        categoryTrendData.length -
                           1
                       ]?.amount || 0
                     )}
@@ -1381,8 +1241,8 @@ function Analytics() {
 
                   <span>
                     {formatMonthLabel(
-                      displayedTrend[
-                        displayedTrend.length -
+                      categoryTrendData[
+                        categoryTrendData.length -
                           1
                       ]?.month ||
                         selectedMonth
@@ -1397,7 +1257,7 @@ function Analytics() {
 
             <div className="trend-months">
 
-              {displayedTrend.map(
+              {categoryTrendData.map(
                 (item) => (
                   <span
                     key={item.month}
