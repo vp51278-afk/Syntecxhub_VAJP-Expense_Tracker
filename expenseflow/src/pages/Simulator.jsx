@@ -25,7 +25,7 @@ import {
   AlertTriangle,
   XCircle,
 } from "lucide-react";
-import { API_BASE_URL } from "../api";
+import API_BASE_URL from "../api";
 import "./Simulator.css";
 
 const API_ROOT = String(API_BASE_URL || "").trim().replace(/\/+$/, "");
