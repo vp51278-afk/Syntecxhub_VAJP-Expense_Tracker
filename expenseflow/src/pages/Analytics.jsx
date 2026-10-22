@@ -82,19 +82,19 @@ function formatMonthLabel(value) {
 }
 
 function getPreviousMonth(value) {
-  const [yearString, monthString] = value.split("-");
+  const [year, month] = value.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
-  let year = Number(yearString);
-  let month = Number(monthString) - 1;
-
-  month -= 1;
-
-  if (month < 0) {
-    month = 11;
-    year -= 1;
-  }
-
-  return `${year}-${String(month + 1).padStart(2, "0")}`;
+function hasFinancialActivity(data) {
+  const summary = data?.summary || {};
+  return (
+    Number(summary.totalIncome || 0) > 0 ||
+    Number(summary.totalExpenses || 0) > 0 ||
+    (Array.isArray(data?.categories) && data.categories.some((item) => Number(item.amount || 0) > 0)) ||
+    (Array.isArray(data?.recentTransactions) && data.recentTransactions.length > 0)
+  );
 }
 
 function getLastNMonths(value, count) {
@@ -209,11 +209,26 @@ function Analytics() {
           throw new Error(current?.error || "Unable to load analytics for this month.");
         }
 
+        const validResults = results.filter((item) => item.data);
+        setMonthlyHistory(validResults);
+
+        // If the selected month is empty, jump to the most recent month
+        // that actually has financial activity, so charts aren't blank by default.
+        if (!hasFinancialActivity(current.data)) {
+          const latestWithActivity = [...validResults]
+            .reverse()
+            .find((item) => hasFinancialActivity(item.data));
+
+          if (latestWithActivity && latestWithActivity.month !== selectedMonth) {
+            setSelectedMonth(latestWithActivity.month);
+            return;
+          }
+        }
+
         setAnalyticsData(current.data);
         const previousMonth = getPreviousMonth(selectedMonth);
         const previous = results.find((item) => item.month === previousMonth);
         setPreviousData(previous?.data || null);
-        setMonthlyHistory(results.filter((item) => item.data));
       } catch (err) {
         if (!cancelled) {
           console.error("Analytics Fetch Error:", err);
@@ -540,29 +555,18 @@ function Analytics() {
                 )
               }
             >
-              {Array.from(
-                { length: 12 },
-                (_, index) => {
-                  const year =
-                    new Date().getFullYear();
+              {Array.from({ length: 24 }, (_, index) => {
+                const date = new Date();
+                date.setDate(1);
+                date.setMonth(date.getMonth() - index);
+                const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
-                  const month =
-                    String(index + 1).padStart(
-                      2,
-                      "0"
-                    );
-
-                  return (
-                    <option
-                      key={`${year}-${month}`}
-                      value={`${year}-${month}`}
-                    >
-                      {monthNames[index]}{" "}
-                      {year}
-                    </option>
-                  );
-                }
-              )}
+                return (
+                  <option key={value} value={value}>
+                    {monthNames[date.getMonth()]} {date.getFullYear()}
+                  </option>
+                );
+              })}
             </select>
 
             <ChevronDown size={15} />
