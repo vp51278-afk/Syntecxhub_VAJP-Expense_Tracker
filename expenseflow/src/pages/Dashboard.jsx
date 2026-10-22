@@ -395,6 +395,7 @@ function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(() =>
     getMonthKey(new Date())
   );
+  const [didAutoSelectMonth, setDidAutoSelectMonth] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [readNotifications, setReadNotifications] = useState([]);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -483,6 +484,30 @@ function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  // When the dashboard first finishes loading, show the newest month that
+  // actually has transactions if the current month has no recorded activity.
+  // The user can still change the month manually after this initial selection.
+  useEffect(() => {
+    if (loading || didAutoSelectMonth || transactions.length === 0) return;
+
+    const currentMonthHasTransactions = transactions.some((item) =>
+      inSelectedMonth(item, selectedMonth)
+    );
+
+    if (!currentMonthHasTransactions) {
+      const latestTransactionDate = transactions
+        .map(getDate)
+        .filter(Boolean)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+
+      if (latestTransactionDate) {
+        setSelectedMonth(getMonthKey(latestTransactionDate));
+      }
+    }
+
+    setDidAutoSelectMonth(true);
+  }, [loading, didAutoSelectMonth, transactions, selectedMonth]);
 
   const monthTransactions = useMemo(
     () => transactions.filter((item) => inSelectedMonth(item, selectedMonth)),
