@@ -1,24 +1,27 @@
 
 const { GoogleGenAI } = require("@google/genai");
 
-// Gemini is the primary provider; Groq is the automatic fallback.
+
 const geminiClient = process.env.GEMINI_API_KEY
-  ? new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-    })
+  ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
 
 const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const GROQ_MODEL =
   process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
-// Switch to Groq if Gemini takes too long.
 const GEMINI_TIMEOUT_MS = Math.max(
-  1000,
-  Number(process.env.GEMINI_TIMEOUT_MS) || 2000
+  1500,
+  Number(process.env.GEMINI_TIMEOUT_MS) || 2500
 );
+
+const GROQ_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.GROQ_TIMEOUT_MS) || 8000
+);
+
 
 const withTimeout = (promise, timeoutMs, providerName) => {
   let timeoutId;
@@ -26,7 +29,7 @@ const withTimeout = (promise, timeoutMs, providerName) => {
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
       const error = new Error(
-        `${providerName} request timed out after ${timeoutMs}ms.`
+        `${providerName} timed out after ${timeoutMs}ms`
       );
       error.code = "AI_PROVIDER_TIMEOUT";
       reject(error);
@@ -38,20 +41,8 @@ const withTimeout = (promise, timeoutMs, providerName) => {
   });
 };
 
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-const createQuotaError = () => {
-  const error = new Error(
-    "Vajp's AI usage limit has been reached. Please try again later."
-  );
-  error.status = 429;
-  error.code = "AI_QUOTA_EXCEEDED";
-  return error;
-};
-
 const getErrorStatus = (error) => {
-  const directStatus = Number(error?.status);
+  const directStatus = Number(error?.status || error?.statusCode);
 
   if (Number.isFinite(directStatus) && directStatus > 0) {
     return directStatus;
@@ -64,28 +55,13 @@ const getErrorStatus = (error) => {
   return match ? Number(match[1]) : 0;
 };
 
-const isQuotaError = (error) => {
-  const message = String(error?.message || "");
-
-  return (
-    getErrorStatus(error) === 429 ||
-    /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(message)
+const isQuotaError = (error) =>
+  getErrorStatus(error) === 429 ||
+  /RESOURCE_EXHAUSTED|quota exceeded|rate.?limit/i.test(
+    String(error?.message || "")
   );
-};
 
-const isRetryableError = (error) => {
-  const status = getErrorStatus(error);
-  const message = String(error?.message || "");
 
-  return (
-    [500, 502, 503, 504].includes(status) ||
-    /UNAVAILABLE|high demand|temporarily unavailable|timeout|ECONNRESET|fetch failed/i.test(
-      message
-    )
-  );
-};
-
-// Gemini: retry temporary failures once.
 const generateWithGemini = async (
   instructions,
   input,
@@ -102,53 +78,26 @@ const generateWithGemini = async (
     temperature: 0.2,
   };
 
-  if (textFormat) {
+  if (textFormat?.schema) {
     config.responseMimeType = "application/json";
     config.responseSchema = textFormat.schema;
   }
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const response = await geminiClient.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: JSON.stringify(input),
-        config,
-      });
+  const response = await geminiClient.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: JSON.stringify(input),
+    config,
+  });
 
-      const output = response.text;
+  const output = response?.text;
 
-      if (!output || !output.trim()) {
-        throw new Error("Gemini returned an empty response.");
-      }
-
-      return output.trim();
-    } catch (error) {
-      if (isQuotaError(error)) {
-        error.code = error.code || "AI_QUOTA_EXCEEDED";
-        throw error;
-      }
-
-      const retryable = isRetryableError(error);
-
-      console.error("Gemini API error:", {
-        message: error.message,
-        status: getErrorStatus(error) || undefined,
-        model: GEMINI_MODEL,
-        attempt: attempt + 1,
-      });
-
-      if (!retryable || attempt === 1) {
-        throw error;
-      }
-
-      await sleep(500);
-    }
+  if (typeof output !== "string" || !output.trim()) {
+    throw new Error("Gemini returned an empty response.");
   }
 
-  throw new Error("Gemini could not generate a response.");
+  return output.trim();
 };
 
-// Groq fallback.
 const generateWithGroq = async (
   instructions,
   input,
@@ -166,142 +115,153 @@ const generateWithGroq = async (
 
   if (textFormat?.schema) {
     systemInstruction +=
-      "\n\nReturn valid JSON only. Follow this JSON schema exactly:\n" +
+      "\n\nReturn valid JSON only. Follow this schema:\n" +
       JSON.stringify(textFormat.schema);
   }
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content: systemInstruction,
-          },
-          {
-            role: "user",
-            content: JSON.stringify(input),
-          },
-        ],
-        ...(textFormat
-          ? {
-              response_format: {
-                type: "json_object",
-              },
-            }
-          : {}),
-      }),
-    }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    GROQ_TIMEOUT_MS
   );
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    const error = new Error(
-      `Groq API request failed (${response.status}): ${errorBody.slice(0, 500)}`
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          temperature: 0.2,
+          messages: [
+            {
+              role: "system",
+              content: systemInstruction,
+            },
+            {
+              role: "user",
+              content: JSON.stringify(input),
+            },
+          ],
+          ...(textFormat?.schema
+            ? {
+                response_format: {
+                  type: "json_object",
+                },
+              }
+            : {}),
+        }),
+      }
     );
-    error.status = response.status;
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+
+      const error = new Error(
+        `Groq request failed (${response.status}): ${errorBody.slice(
+          0,
+          300
+        )}`
+      );
+
+      error.status = response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    const output = data?.choices?.[0]?.message?.content;
+
+    if (typeof output !== "string" || !output.trim()) {
+      throw new Error("Groq returned an empty response.");
+    }
+
+    console.info("Vajp Groq response time:", Date.now() - startedAt, "ms");
+
+    return output.trim();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      const timeoutError = new Error(
+        `Groq timed out after ${GROQ_TIMEOUT_MS}ms`
+      );
+
+      timeoutError.code = "AI_PROVIDER_TIMEOUT";
+      throw timeoutError;
+    }
+
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = await response.json();
-  const output = data?.choices?.[0]?.message?.content;
-
-  if (typeof output !== "string" || !output.trim()) {
-    throw new Error("Groq returned an empty response.");
-  }
-
-  return output.trim();
 };
 
-// Gemini first; Groq if Gemini times out or fails temporarily.
 const createAIResponse = async (
   instructions,
   input,
   textFormat
 ) => {
-  if (!geminiClient) {
-    console.warn("Gemini is not configured. Using Groq directly.");
-    return generateWithGroq(instructions, input, textFormat);
-  }
-
-  const geminiStartedAt = Date.now();
-
-  try {
-    const output = await withTimeout(
-      generateWithGemini(instructions, input, textFormat),
-      GEMINI_TIMEOUT_MS,
-      "Gemini"
-    );
-
-    console.info("Vajp AI provider: Gemini", {
-      durationMs: Date.now() - geminiStartedAt,
-    });
-
-    return output;
-  } catch (error) {
-    console.warn("Gemini attempt finished; considering fallback.", {
-      durationMs: Date.now() - geminiStartedAt,
-      status: getErrorStatus(error) || undefined,
-      code: error.code || undefined,
-    });
-
-    const fallbackEligible =
-      isQuotaError(error) ||
-      isRetryableError(error) ||
-      error.code === "AI_PROVIDER_TIMEOUT" ||
-      error.code === "GEMINI_NOT_CONFIGURED";
-
-    if (!fallbackEligible) {
-      throw error;
-    }
-
-    console.warn("Gemini unavailable. Switching to Groq.", {
-      status: getErrorStatus(error) || undefined,
-      reason: isQuotaError(error)
-        ? "quota/rate limit"
-        : "temporary provider failure",
-    });
-
-    const groqStartedAt = Date.now();
+  if (geminiClient) {
+    const startedAt = Date.now();
 
     try {
-      const output = await generateWithGroq(
-        instructions,
-        input,
-        textFormat
+      const output = await withTimeout(
+        generateWithGemini(instructions, input, textFormat),
+        GEMINI_TIMEOUT_MS,
+        "Gemini"
       );
 
-      console.info("Vajp AI provider: Groq fallback", {
-        durationMs: Date.now() - groqStartedAt,
-      });
+      console.info(
+        "Vajp Gemini response time:",
+        Date.now() - startedAt,
+        "ms"
+      );
 
       return output;
-    } catch (fallbackError) {
-      console.error("Groq fallback failed:", {
-        message: fallbackError.message,
-        status: getErrorStatus(fallbackError) || undefined,
+    } catch (error) {
+      console.warn("Gemini failed; trying Groq fallback.", {
+        durationMs: Date.now() - startedAt,
+        status: getErrorStatus(error) || undefined,
+        code: error.code || undefined,
+        message: error.message,
       });
-
-      if (isQuotaError(error) && !process.env.GROQ_API_KEY) {
-        throw createQuotaError();
-      }
-
-      throw new Error(
-        "Vajp AI is temporarily unavailable. Please try again later."
-      );
     }
+  } else {
+    console.warn("Gemini not configured; trying Groq.");
+  }
+
+  try {
+    return await generateWithGroq(
+      instructions,
+      input,
+      textFormat
+    );
+  } catch (error) {
+    console.error("Vajp Groq fallback failed.", {
+      status: getErrorStatus(error) || undefined,
+      code: error.code || undefined,
+      message: error.message,
+    });
+
+    const unavailable = new Error(
+      isQuotaError(error)
+        ? "Vajp AI usage limit reached. Please try again later."
+        : "Vajp AI is temporarily unavailable. Please try again shortly."
+    );
+
+    unavailable.status = isQuotaError(error) ? 429 : 503;
+    unavailable.code = error.code || "AI_PROVIDERS_UNAVAILABLE";
+
+    throw unavailable;
   }
 };
 
-// Purchase advisor: safety validations retained.
+
 const getAIAdvisor = async (financialData = {}) => {
   const {
     monthlyIncome,
@@ -414,6 +374,8 @@ Rules:
     throw new Error("Vajp returned invalid purchase-advice fields.");
   }
 
+  // Enforce the affordability rule in backend code,
+  // regardless of what the AI recommends.
   if (
     !Number.isFinite(validPrice) ||
     !Number.isFinite(safeLimit) ||
