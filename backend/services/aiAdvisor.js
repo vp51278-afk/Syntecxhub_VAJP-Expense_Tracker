@@ -1,28 +1,81 @@
-
 const { GoogleGenAI } = require("@google/genai");
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is missing from backend environment variables.");
-}
+// Gemini is the primary provider; Groq is the automatic fallback.
+const geminiClient = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    })
+  : null;
 
-const client = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const GEMINI_MODEL =
+  process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const GROQ_MODEL =
+  process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const createQuotaError = () => {
   const error = new Error(
-    "Vajp's AI usage limit has been reached. Please try again in about 13 hours."
+    "Vajp's AI usage limit has been reached. Please try again later."
   );
   error.status = 429;
   error.code = "AI_QUOTA_EXCEEDED";
-  error.retryAfterSeconds = 13 * 60 * 60;
   return error;
 };
 
-const createAIResponse = async (instructions, input, textFormat) => {
+const getErrorStatus = (error) => {
+  const directStatus = Number(error?.status);
+
+  if (Number.isFinite(directStatus) && directStatus > 0) {
+    return directStatus;
+  }
+
+  const match = String(error?.message || "").match(
+    /\b(429|500|502|503|504)\b/
+  );
+
+  return match ? Number(match[1]) : 0;
+};
+
+const isQuotaError = (error) => {
+  const message = String(error?.message || "");
+
+  return (
+    getErrorStatus(error) === 429 ||
+    /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(
+      message
+    )
+  );
+};
+
+const isRetryableError = (error) => {
+  const status = getErrorStatus(error);
+  const message = String(error?.message || "");
+
+  return (
+    [500, 502, 503, 504].includes(status) ||
+    /UNAVAILABLE|high demand|temporarily unavailable|timeout|ECONNRESET|fetch failed/i.test(
+      message
+    )
+  );
+};
+
+// Ask Gemini with retries for temporary errors.
+const generateWithGemini = async (
+  instructions,
+  input,
+  textFormat
+) => {
+  if (!geminiClient) {
+    const error = new Error(
+      "GEMINI_API_KEY is not configured."
+    );
+    error.code = "GEMINI_NOT_CONFIGURED";
+    throw error;
+  }
+
   const config = {
     systemInstruction: instructions,
     temperature: 0.2,
@@ -35,39 +88,32 @@ const createAIResponse = async (instructions, input, textFormat) => {
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await client.models.generateContent({
-        model: MODEL,
-        contents: JSON.stringify(input),
-        config,
-      });
+      const response =
+        await geminiClient.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: JSON.stringify(input),
+          config,
+        });
 
       const output = response.text;
 
-      if (!output) {
-        throw new Error("Vajp returned an empty response.");
+      if (!output || !output.trim()) {
+        throw new Error("Gemini returned an empty response.");
       }
 
       return output.trim();
     } catch (error) {
-      const message = String(error.message || "");
-      const status = Number(error.status || error.code);
-
-      const quotaExceeded =
-        status === 429 ||
-        /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(message);
-
-      if (quotaExceeded) {
-        throw createQuotaError();
+      if (isQuotaError(error)) {
+        error.code = error.code || "AI_QUOTA_EXCEEDED";
+        throw error;
       }
 
-      const retryable =
-        [500, 502, 503, 504].includes(status) ||
-        /UNAVAILABLE|high demand|temporarily unavailable/i.test(message);
+      const retryable = isRetryableError(error);
 
       console.error("Gemini API error:", {
-        message,
-        status: status || undefined,
-        model: MODEL,
+        message: error.message,
+        status: getErrorStatus(error) || undefined,
+        model: GEMINI_MODEL,
         attempt: attempt + 1,
       });
 
@@ -79,7 +125,161 @@ const createAIResponse = async (instructions, input, textFormat) => {
     }
   }
 
-  throw new Error("Vajp could not get a response. Please try again.");
+  throw new Error("Gemini could not generate a response.");
+};
+
+// Groq uses an OpenAI-compatible chat completions endpoint.
+const generateWithGroq = async (
+  instructions,
+  input,
+  textFormat
+) => {
+  const apiKey = process.env.GROQ_API_KEY;
+
+  if (!apiKey) {
+    const error = new Error(
+      "GROQ_API_KEY is not configured."
+    );
+    error.code = "GROQ_NOT_CONFIGURED";
+    throw error;
+  }
+
+  let systemInstruction = instructions;
+
+  if (textFormat?.schema) {
+    systemInstruction +=
+      "\n\nReturn valid JSON only. Follow this JSON schema exactly:\n" +
+      JSON.stringify(textFormat.schema);
+  }
+
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: systemInstruction,
+          },
+          {
+            role: "user",
+            content: JSON.stringify(input),
+          },
+        ],
+        ...(textFormat
+          ? {
+              response_format: {
+                type: "json_object",
+              },
+            }
+          : {}),
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+
+    const error = new Error(
+      `Groq API request failed (${response.status}): ${errorBody.slice(
+        0,
+        500
+      )}`
+    );
+
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  const output = data?.choices?.[0]?.message?.content;
+
+  if (typeof output !== "string" || !output.trim()) {
+    throw new Error("Groq returned an empty response.");
+  }
+
+  return output.trim();
+};
+
+// Try Gemini first; switch to Groq on quota or temporary errors.
+const createAIResponse = async (
+  instructions,
+  input,
+  textFormat
+) => {
+  if (!geminiClient) {
+    console.warn(
+      "Gemini is not configured. Using Groq directly."
+    );
+
+    return generateWithGroq(
+      instructions,
+      input,
+      textFormat
+    );
+  }
+
+  try {
+    const output = await generateWithGemini(
+      instructions,
+      input,
+      textFormat
+    );
+
+    console.info("Vajp AI provider: Gemini");
+    return output;
+  } catch (error) {
+    const fallbackEligible =
+      isQuotaError(error) ||
+      isRetryableError(error) ||
+      error.code === "GEMINI_NOT_CONFIGURED";
+
+    if (!fallbackEligible) {
+      throw error;
+    }
+
+    console.warn("Gemini unavailable. Switching to Groq.", {
+      status: getErrorStatus(error) || undefined,
+      reason: isQuotaError(error)
+        ? "quota/rate limit"
+        : "temporary provider failure",
+    });
+
+    try {
+      const output = await generateWithGroq(
+        instructions,
+        input,
+        textFormat
+      );
+
+      console.info("Vajp AI provider: Groq fallback");
+      return output;
+    } catch (fallbackError) {
+      console.error("Groq fallback failed:", {
+        message: fallbackError.message,
+        status: getErrorStatus(fallbackError) || undefined,
+      });
+
+      // Preserve the quota-specific message if both providers fail.
+      if (
+        isQuotaError(error) &&
+        !process.env.GROQ_API_KEY
+      ) {
+        throw createQuotaError();
+      }
+
+      throw new Error(
+        "Vajp AI is temporarily unavailable. Please try again later."
+      );
+    }
+  }
 };
 
 const getAIAdvisor = async (financialData = {}) => {
@@ -97,7 +297,10 @@ const getAIAdvisor = async (financialData = {}) => {
   } = financialData;
 
   const safeLimit = Number(safeToSpend);
-  const validLimit = Number.isFinite(safeLimit) ? Math.max(0, safeLimit) : 0;
+  const validLimit = Number.isFinite(safeLimit)
+    ? Math.max(0, safeLimit)
+    : 0;
+
   const validPrice = Number(price);
 
   const output = await createAIResponse(
@@ -142,11 +345,21 @@ Rules:
             type: "STRING",
             enum: ["BUY", "WAIT", "AVOID"],
           },
-          recommendedAmount: { type: "NUMBER" },
-          reason: { type: "STRING" },
-          goalImpact: { type: "STRING" },
-          alternative: { type: "STRING" },
-          action: { type: "STRING" },
+          recommendedAmount: {
+            type: "NUMBER",
+          },
+          reason: {
+            type: "STRING",
+          },
+          goalImpact: {
+            type: "STRING",
+          },
+          alternative: {
+            type: "STRING",
+          },
+          action: {
+            type: "STRING",
+          },
         },
         required: [
           "decision",
@@ -165,17 +378,22 @@ Rules:
   try {
     advice = JSON.parse(output);
   } catch {
-    throw new Error("Vajp returned an invalid purchase-advice response.");
+    throw new Error(
+      "Vajp returned an invalid purchase-advice response."
+    );
   }
 
   if (
     !["BUY", "WAIT", "AVOID"].includes(advice.decision) ||
+    typeof advice.recommendedAmount !== "number" ||
     !Number.isFinite(advice.recommendedAmount) ||
     !["reason", "goalImpact", "alternative", "action"].every(
       (key) => typeof advice[key] === "string"
     )
   ) {
-    throw new Error("Vajp returned invalid purchase-advice fields.");
+    throw new Error(
+      "Vajp returned invalid purchase-advice fields."
+    );
   }
 
   if (
@@ -198,7 +416,10 @@ Rules:
   return advice;
 };
 
-const getGeneralAIResponse = async (question, financialData = {}) => {
+const getGeneralAIResponse = async (
+  question,
+  financialData = {}
+) => {
   const context = {
     ...financialData,
     goals: Array.isArray(financialData.goals)
@@ -241,9 +462,3 @@ Rules:
 
 module.exports = getAIAdvisor;
 module.exports.getGeneralAIResponse = getGeneralAIResponse;
-
-
-
-
-
-
