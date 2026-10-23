@@ -8,6 +8,7 @@ import {
   Wallet,
   Target,
   ShoppingCart,
+  MessageCircle,
   User,
   CalendarDays,
   ChevronDown,
@@ -44,6 +45,7 @@ const NAV_ITEMS = [
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/goals", label: "Goals", icon: Target },
   { to: "/simulator", label: "Before You Buy", icon: ShoppingCart },
+  { to: "/", label: "Talk to Vajp", icon: MessageCircle },
   { to: "/profile", label: "Profile", icon: User },
 ];
 
