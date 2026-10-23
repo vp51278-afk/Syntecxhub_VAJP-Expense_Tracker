@@ -16,8 +16,8 @@ const GROQ_MODEL =
 
 // Switch to Groq if Gemini takes too long.
 const GEMINI_TIMEOUT_MS = Math.max(
-  3000,
-  Number(process.env.GEMINI_TIMEOUT_MS) || 7000
+  1000,
+  Number(process.env.GEMINI_TIMEOUT_MS) || 2000
 );
 
 const withTimeout = (promise, timeoutMs, providerName) => {
