@@ -1,3 +1,4 @@
+
 const { GoogleGenAI } = require("@google/genai");
 
 // Gemini is the primary provider; Groq is the automatic fallback.
@@ -12,6 +13,30 @@ const GEMINI_MODEL =
 
 const GROQ_MODEL =
   process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+
+// Switch to Groq if Gemini takes too long.
+const GEMINI_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.GEMINI_TIMEOUT_MS) || 7000
+);
+
+const withTimeout = (promise, timeoutMs, providerName) => {
+  let timeoutId;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(
+        `${providerName} request timed out after ${timeoutMs}ms.`
+      );
+      error.code = "AI_PROVIDER_TIMEOUT";
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+};
 
 const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,9 +69,7 @@ const isQuotaError = (error) => {
 
   return (
     getErrorStatus(error) === 429 ||
-    /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(
-      message
-    )
+    /RESOURCE_EXHAUSTED|quota exceeded|rate limit/i.test(message)
   );
 };
 
@@ -62,16 +85,14 @@ const isRetryableError = (error) => {
   );
 };
 
-// Ask Gemini with retries for temporary errors.
+// Gemini: retry temporary failures once.
 const generateWithGemini = async (
   instructions,
   input,
   textFormat
 ) => {
   if (!geminiClient) {
-    const error = new Error(
-      "GEMINI_API_KEY is not configured."
-    );
+    const error = new Error("GEMINI_API_KEY is not configured.");
     error.code = "GEMINI_NOT_CONFIGURED";
     throw error;
   }
@@ -86,14 +107,13 @@ const generateWithGemini = async (
     config.responseSchema = textFormat.schema;
   }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response =
-        await geminiClient.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: JSON.stringify(input),
-          config,
-        });
+      const response = await geminiClient.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: JSON.stringify(input),
+        config,
+      });
 
       const output = response.text;
 
@@ -117,18 +137,18 @@ const generateWithGemini = async (
         attempt: attempt + 1,
       });
 
-      if (!retryable || attempt === 2) {
+      if (!retryable || attempt === 1) {
         throw error;
       }
 
-      await sleep(1000 * (attempt + 1));
+      await sleep(500);
     }
   }
 
   throw new Error("Gemini could not generate a response.");
 };
 
-// Groq uses an OpenAI-compatible chat completions endpoint.
+// Groq fallback.
 const generateWithGroq = async (
   instructions,
   input,
@@ -137,9 +157,7 @@ const generateWithGroq = async (
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    const error = new Error(
-      "GROQ_API_KEY is not configured."
-    );
+    const error = new Error("GROQ_API_KEY is not configured.");
     error.code = "GROQ_NOT_CONFIGURED";
     throw error;
   }
@@ -186,14 +204,9 @@ const generateWithGroq = async (
 
   if (!response.ok) {
     const errorBody = await response.text();
-
     const error = new Error(
-      `Groq API request failed (${response.status}): ${errorBody.slice(
-        0,
-        500
-      )}`
+      `Groq API request failed (${response.status}): ${errorBody.slice(0, 500)}`
     );
-
     error.status = response.status;
     throw error;
   }
@@ -208,37 +221,42 @@ const generateWithGroq = async (
   return output.trim();
 };
 
-// Try Gemini first; switch to Groq on quota or temporary errors.
+// Gemini first; Groq if Gemini times out or fails temporarily.
 const createAIResponse = async (
   instructions,
   input,
   textFormat
 ) => {
   if (!geminiClient) {
-    console.warn(
-      "Gemini is not configured. Using Groq directly."
-    );
-
-    return generateWithGroq(
-      instructions,
-      input,
-      textFormat
-    );
+    console.warn("Gemini is not configured. Using Groq directly.");
+    return generateWithGroq(instructions, input, textFormat);
   }
 
+  const geminiStartedAt = Date.now();
+
   try {
-    const output = await generateWithGemini(
-      instructions,
-      input,
-      textFormat
+    const output = await withTimeout(
+      generateWithGemini(instructions, input, textFormat),
+      GEMINI_TIMEOUT_MS,
+      "Gemini"
     );
 
-    console.info("Vajp AI provider: Gemini");
+    console.info("Vajp AI provider: Gemini", {
+      durationMs: Date.now() - geminiStartedAt,
+    });
+
     return output;
   } catch (error) {
+    console.warn("Gemini attempt finished; considering fallback.", {
+      durationMs: Date.now() - geminiStartedAt,
+      status: getErrorStatus(error) || undefined,
+      code: error.code || undefined,
+    });
+
     const fallbackEligible =
       isQuotaError(error) ||
       isRetryableError(error) ||
+      error.code === "AI_PROVIDER_TIMEOUT" ||
       error.code === "GEMINI_NOT_CONFIGURED";
 
     if (!fallbackEligible) {
@@ -252,6 +270,8 @@ const createAIResponse = async (
         : "temporary provider failure",
     });
 
+    const groqStartedAt = Date.now();
+
     try {
       const output = await generateWithGroq(
         instructions,
@@ -259,7 +279,10 @@ const createAIResponse = async (
         textFormat
       );
 
-      console.info("Vajp AI provider: Groq fallback");
+      console.info("Vajp AI provider: Groq fallback", {
+        durationMs: Date.now() - groqStartedAt,
+      });
+
       return output;
     } catch (fallbackError) {
       console.error("Groq fallback failed:", {
@@ -267,11 +290,7 @@ const createAIResponse = async (
         status: getErrorStatus(fallbackError) || undefined,
       });
 
-      // Preserve the quota-specific message if both providers fail.
-      if (
-        isQuotaError(error) &&
-        !process.env.GROQ_API_KEY
-      ) {
+      if (isQuotaError(error) && !process.env.GROQ_API_KEY) {
         throw createQuotaError();
       }
 
@@ -282,6 +301,7 @@ const createAIResponse = async (
   }
 };
 
+// Purchase advisor: safety validations retained.
 const getAIAdvisor = async (financialData = {}) => {
   const {
     monthlyIncome,
@@ -391,9 +411,7 @@ Rules:
       (key) => typeof advice[key] === "string"
     )
   ) {
-    throw new Error(
-      "Vajp returned invalid purchase-advice fields."
-    );
+    throw new Error("Vajp returned invalid purchase-advice fields.");
   }
 
   if (
